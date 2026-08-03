@@ -3,11 +3,11 @@
   "version": "0.4.0",
   "description": "Plays an alert sound when your coding agent (Claude Code, Codex, Antigravity, OpenClaw) finishes a task",
   "license": "Apache-2.0",
-  "author": "",
-  "homepage": "",
+  "author": "MaxJafar",
+  "homepage": "https://github.com/MaxJafar/wilhelm-alert",
   "repository": {
     "type": "git",
-    "url": ""
+    "url": "git+https://github.com/MaxJafar/wilhelm-alert.git"
   },
   "keywords": [
     "claude-code",
@@ -56,5 +56,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "packageManager": "pnpm@10.34.5"
+  "packageManager": "pnpm@10.34.5",
+  "bugs": {
+    "url": "https://github.com/MaxJafar/wilhelm-alert/issues"
+  }
 }

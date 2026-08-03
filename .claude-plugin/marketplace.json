@@ -1,7 +1,8 @@
 {
   "name": "wilhelm-alert-marketplace",
   "owner": {
-    "name": "Your Name"
+    "name": "MaxJafar",
+    "url": "https://github.com/MaxJafar"
   },
   "description": "Marketplace for the wilhelm-alert plugin (agent task-completion sound alerts)",
   "plugins": [

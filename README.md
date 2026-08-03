@@ -46,6 +46,8 @@ typing, and clicking it dismisses it early.
 ## Setup
 
 ```bash
+git clone https://github.com/MaxJafar/wilhelm-alert.git
+cd wilhelm-alert
 pnpm install
 pnpm setup
 ```
@@ -95,16 +97,19 @@ WILHELM_ALERT_MODE=turbo ./bin/wilhelm-alert
 ### Claude Code
 
 ```bash
-claude plugin marketplace add ./
+claude plugin marketplace add MaxJafar/wilhelm-alert
 claude plugin install wilhelm-alert@wilhelm-alert-marketplace
 ```
 
 ### Codex CLI
 
 ```bash
-codex plugin marketplace add .
+codex plugin marketplace add https://github.com/MaxJafar/wilhelm-alert
 codex plugin add wilhelm-alert@wilhelm-alert-marketplace
 ```
+
+Working from a local clone instead? Point them at the folder — `claude
+plugin marketplace add ./` and `codex plugin marketplace add .`.
 
 **After changing anything** — a new sound, new faces, edited code — run
 `claude plugin update wilhelm-alert@wilhelm-alert-marketplace`. Agents run

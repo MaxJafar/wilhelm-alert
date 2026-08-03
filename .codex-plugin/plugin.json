@@ -3,8 +3,16 @@
   "version": "0.4.0",
   "description": "Plays an alert sound when Codex finishes a turn or session",
   "author": {
-    "name": "Your Name"
+    "name": "MaxJafar",
+    "url": "https://github.com/MaxJafar"
   },
   "license": "Apache-2.0",
-  "keywords": ["notification", "hook", "sound", "productivity"]
+  "keywords": [
+    "notification",
+    "hook",
+    "sound",
+    "productivity"
+  ],
+  "repository": "https://github.com/MaxJafar/wilhelm-alert",
+  "homepage": "https://github.com/MaxJafar/wilhelm-alert"
 }
