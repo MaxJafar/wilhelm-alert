@@ -50,6 +50,17 @@ function configPath() {
   return path.join(base, 'wilhelm-alert', 'config');
 }
 
+function stateDir() {
+  if (PLATFORM === 'win32') {
+    const base = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+    return path.join(base, 'wilhelm-alert');
+  }
+  const base = process.env.XDG_STATE_HOME || path.join(os.homedir(), '.local', 'state');
+  return path.join(base, 'wilhelm-alert');
+}
+const HISTORY_FILE = path.join(stateDir(), 'history.jsonl');
+const LAST_FIRE_FILE = path.join(stateDir(), 'last-fire');
+
 function readConfig() {
   try {
     const text = fs.readFileSync(configPath(), 'utf8');
@@ -86,6 +97,150 @@ function detectSource() {
   return 'generic';
 }
 const source = detectSource();
+
+// ------------------------------------------------------- the agent's payload
+
+// Agents pipe a JSON event on stdin. Reading it is what makes the log useful
+// (which event, which session, which model) and is also how we tell a real
+// end-of-turn from session teardown.
+function readStdinPayload() {
+  // A TTY means a human ran this by hand; there is no payload coming and a
+  // blocking read would hang the terminal.
+  if (process.stdin.isTTY) return null;
+  const chunks = [];
+  const buffer = Buffer.alloc(65536);
+  const deadline = Date.now() + 200;
+  try {
+    while (Date.now() < deadline && chunks.length < 32) {
+      let bytes;
+      try {
+        bytes = fs.readSync(0, buffer, 0, buffer.length, null);
+      } catch (err) {
+        if (err.code === 'EAGAIN') continue; // pipe open but empty
+        break; // EOF, EBADF, closed stdin — nothing more to read
+      }
+      if (bytes === 0) break;
+      chunks.push(Buffer.from(buffer.subarray(0, bytes)));
+    }
+  } catch {
+    return null;
+  }
+  const text = Buffer.concat(chunks).toString('utf8').trim();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+const payload = readStdinPayload() || {};
+
+// The hook payload carries no model name, but the transcript does. Read only
+// the tail so this stays cheap on a long conversation.
+function modelFromTranscript(transcriptPath) {
+  if (!transcriptPath) return null;
+  try {
+    const { size } = fs.statSync(transcriptPath);
+    const window = Math.min(size, 65536);
+    const fd = fs.openSync(transcriptPath, 'r');
+    const buffer = Buffer.alloc(window);
+    fs.readSync(fd, buffer, 0, window, Math.max(0, size - window));
+    fs.closeSync(fd);
+    const lines = buffer.toString('utf8').split('\n').reverse();
+    for (const line of lines) {
+      if (!line.includes('"model"')) continue;
+      try {
+        const entry = JSON.parse(line);
+        const model = entry?.message?.model || entry?.model;
+        if (typeof model === 'string' && model) return model;
+      } catch {
+        /* partial line at the window edge */
+      }
+    }
+  } catch {
+    /* no transcript, or unreadable */
+  }
+  return null;
+}
+
+// -------------------------------------------------------------------- logging
+
+function appendHistory(entry) {
+  try {
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.appendFileSync(HISTORY_FILE, `${JSON.stringify(entry)}\n`);
+
+    // Trim from the front once it gets long, so this never grows unbounded.
+    const { size } = fs.statSync(HISTORY_FILE);
+    if (size > 512 * 1024) {
+      const kept = fs.readFileSync(HISTORY_FILE, 'utf8').trim().split('\n').slice(-400);
+      fs.writeFileSync(HISTORY_FILE, `${kept.join('\n')}\n`);
+    }
+  } catch {
+    /* logging must never break the hook chain */
+  }
+}
+
+function record(fired, reason, extra = {}) {
+  appendHistory({
+    at: new Date().toISOString(),
+    fired,
+    reason,
+    source,
+    mode,
+    event: payload.hook_event_name || null,
+    session: payload.session_id ? String(payload.session_id).slice(0, 8) : null,
+    end_reason: payload.reason || null,
+    cwd: payload.cwd || process.cwd(),
+    model: modelFromTranscript(payload.transcript_path),
+    pid: process.pid,
+    ...extra,
+  });
+}
+
+// -------------------------------------------------------------- should we fire
+
+// Only end-of-turn events should scream. SessionEnd fires on teardown —
+// including `resume` when another instance takes the session over, and
+// `clear` — which is why launching the app or opening a link used to trigger
+// it. Guarded here as well as in hooks.json so a stale cached hook config
+// can't resurrect the behaviour.
+const NON_TURN_EVENTS = new Set(['SessionEnd', 'SessionStart', 'Notification', 'PreCompact']);
+
+function suppressionReason() {
+  const event = payload.hook_event_name;
+  if (event && NON_TURN_EVENTS.has(event)) {
+    return `ignored ${event}${payload.reason ? ` (${payload.reason})` : ''}`;
+  }
+  // Claude Code sets this when a Stop hook is already driving the turn;
+  // firing again would stack screams on one completion.
+  if (payload.stop_hook_active === true) return 'stop hook already active';
+
+  // Two hooks landing together (Stop plus a session event, or two agents at
+  // once) would otherwise scream twice for one finish.
+  const minInterval = Number(config.min_interval_ms ?? 3000);
+  if (minInterval > 0) {
+    try {
+      const last = Number(fs.readFileSync(LAST_FIRE_FILE, 'utf8').trim());
+      const gap = Date.now() - last;
+      if (Number.isFinite(last) && gap < minInterval) {
+        return `debounced (${gap}ms since last, min ${minInterval}ms)`;
+      }
+    } catch {
+      /* no previous fire recorded */
+    }
+  }
+  return null;
+}
+
+function markFired() {
+  try {
+    fs.mkdirSync(stateDir(), { recursive: true });
+    fs.writeFileSync(LAST_FIRE_FILE, String(Date.now()));
+  } catch {
+    /* non-fatal */
+  }
+}
 
 // ----------------------------------------------------------------- resolving
 
@@ -219,6 +374,19 @@ function showPopup(image) {
 }
 
 // ---------------------------------------------------------------------- main
+
+// --force is the escape hatch for testing: it skips the debounce and the
+// event filter so a manual run always screams.
+const forced = args.force !== undefined || process.env.WILHELM_ALERT_FORCE === '1';
+const suppressed = forced ? null : suppressionReason();
+
+if (suppressed) {
+  record(false, suppressed);
+  process.exit(0);
+}
+
+markFired();
+record(true, forced ? 'forced' : 'end of turn');
 
 const sound = resolveSound();
 if (sound) {

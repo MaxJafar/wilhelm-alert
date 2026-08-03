@@ -185,6 +185,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ("middle", "Middle", "The scream, plus the model screaming back.", "POPULAR"),
         ("turbo", "Turbo", "The popup shakes itself apart.", "CHAOTIC"),
     ]
+    private let agents = [
+        ("openclaw", "OpenClaw", "HOOK"),
+        ("antigravity", "Antigravity", "HOOK"),
+        ("claude", "Claude", "PLUGIN"),
+        ("codex", "Codex", "PLUGIN"),
+        ("cursor", "Cursor", "HOOK"),
+    ]
 
     private var configURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
@@ -272,24 +279,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         iconCard.cornerRadius = 14
         iconCard.translatesAutoresizingMaskIntoConstraints = false
 
-        let icon = NSImageView(image: NSImage(systemSymbolName: "speaker.wave.3.fill", accessibilityDescription: "Alert") ?? NSImage())
-        icon.translatesAutoresizingMaskIntoConstraints = false
-        icon.contentTintColor = wilhelmAccent
-        icon.imageScaling = .scaleProportionallyUpOrDown
-        iconCard.addSubview(icon)
+        let iconStrip = makeIconStrip()
+        iconStrip.translatesAutoresizingMaskIntoConstraints = false
+        iconCard.addSubview(iconStrip)
         NSLayoutConstraint.activate([
-            iconCard.widthAnchor.constraint(equalToConstant: 46),
+            iconCard.widthAnchor.constraint(equalToConstant: 132),
             iconCard.heightAnchor.constraint(equalToConstant: 46),
-            icon.leadingAnchor.constraint(equalTo: iconCard.leadingAnchor, constant: 12),
-            icon.trailingAnchor.constraint(equalTo: iconCard.trailingAnchor, constant: -12),
-            icon.topAnchor.constraint(equalTo: iconCard.topAnchor, constant: 12),
-            icon.bottomAnchor.constraint(equalTo: iconCard.bottomAnchor, constant: -12),
+            iconStrip.leadingAnchor.constraint(equalTo: iconCard.leadingAnchor, constant: 8),
+            iconStrip.trailingAnchor.constraint(equalTo: iconCard.trailingAnchor, constant: -8),
+            iconStrip.topAnchor.constraint(equalTo: iconCard.topAnchor, constant: 8),
+            iconStrip.bottomAnchor.constraint(equalTo: iconCard.bottomAnchor, constant: -8),
         ])
 
         let eyebrow = label("WILHELM ALERT", size: 10, bold: true)
         eyebrow.textColor = wilhelmAccent
-        let heading = label("When your agent finishes, it screams.", size: 22, bold: true)
-        let subheading = label("A tiny completion ritual for Claude Code and Codex.", size: 12, secondary: true)
+        let heading = label("When agents finish, they scream.", size: 20, bold: true)
+        let subheading = label("One loud little ritual for five coding agents.", size: 12, secondary: true)
         let copy = NSStackView(views: [eyebrow, heading, subheading])
         copy.orientation = .vertical
         copy.alignment = .leading
@@ -323,6 +328,41 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return container
     }
 
+    private func makeIconStrip() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.distribution = .fillEqually
+        row.spacing = 4
+
+        for (source, _, _) in agents {
+            let tile = RoundedCardView()
+            tile.fillColor = NSColor.black
+            tile.borderColor = NSColor.white.withAlphaComponent(0.16)
+            tile.cornerRadius = 8
+            tile.translatesAutoresizingMaskIntoConstraints = false
+
+            let imageView = NSImageView()
+            imageView.image = NSImage(contentsOfFile: repoRoot + "/assets/scream-" + source + ".png")
+            imageView.imageScaling = .scaleAxesIndependently
+            imageView.translatesAutoresizingMaskIntoConstraints = false
+            imageView.wantsLayer = true
+            imageView.layer?.cornerRadius = 7
+            imageView.layer?.masksToBounds = true
+            tile.addSubview(imageView)
+            NSLayoutConstraint.activate([
+                tile.widthAnchor.constraint(equalToConstant: 20),
+                tile.heightAnchor.constraint(equalToConstant: 30),
+                imageView.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 2),
+                imageView.trailingAnchor.constraint(equalTo: tile.trailingAnchor, constant: -2),
+                imageView.topAnchor.constraint(equalTo: tile.topAnchor, constant: 2),
+                imageView.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -2),
+            ])
+            row.addArrangedSubview(tile)
+        }
+        return row
+    }
+
     private func makeFacesSection() -> NSView {
         let section = NSStackView()
         section.orientation = .vertical
@@ -330,76 +370,81 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         section.spacing = 9
 
         section.addArrangedSubview(makeSectionHeader(
-            title: "The cast",
-            subtitle: "Your custom screamers are loaded and ready to pop up."
+            title: "Your agent roster",
+            subtitle: "Five faces. One shared completion ritual."
         ))
 
-        let faces = NSStackView(views: [
-            makeFaceCard(source: "codex", title: "Codex", detail: "OpenAI completion"),
-            makeFaceCard(source: "claude", title: "Claude Code", detail: "Anthropic completion"),
-        ])
+        let faces = NSStackView()
         faces.orientation = .horizontal
         faces.alignment = .height
         faces.distribution = .fillEqually
-        faces.spacing = 12
-        faces.heightAnchor.constraint(equalToConstant: 118).isActive = true
+        faces.spacing = 8
+        faces.heightAnchor.constraint(equalToConstant: 126).isActive = true
         faces.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        for (source, title, badge) in agents {
+            faces.addArrangedSubview(makeAgentFaceTile(source: source, title: title, badge: badge))
+        }
         section.addArrangedSubview(faces)
         return section
     }
 
-    private func makeFaceCard(source: String, title: String, detail: String) -> NSView {
+    private func makeAgentFaceTile(source: String, title: String, badge: String) -> NSView {
         let card = RoundedCardView()
-        card.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.64)
-        card.cornerRadius = 17
+        card.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.66)
+        card.cornerRadius = 15
 
         let imageShell = RoundedCardView()
-        imageShell.fillColor = source == "claude" ? NSColor.black : NSColor.white
-        imageShell.borderColor = NSColor.separatorColor.withAlphaComponent(0.35)
-        imageShell.cornerRadius = 13
+        imageShell.fillColor = NSColor.black
+        imageShell.borderColor = NSColor.white.withAlphaComponent(0.16)
+        imageShell.cornerRadius = 10
         imageShell.translatesAutoresizingMaskIntoConstraints = false
 
         let imageView = NSImageView()
         let faceImage = NSImage(contentsOfFile: repoRoot + "/assets/scream-" + source + ".png")
-        imageView.image = faceImage
+        imageView.image = faceImage ?? NSImage(
+            systemSymbolName: "questionmark",
+            accessibilityDescription: "missing face"
+        )
+        imageView.contentTintColor = faceImage == nil ? .tertiaryLabelColor : nil
         imageView.imageScaling = .scaleAxesIndependently
         imageView.translatesAutoresizingMaskIntoConstraints = false
         imageView.wantsLayer = true
-        imageView.layer?.cornerRadius = 11
+        imageView.layer?.cornerRadius = 9
         imageView.layer?.masksToBounds = true
         imageShell.addSubview(imageView)
         NSLayoutConstraint.activate([
-            imageShell.widthAnchor.constraint(equalToConstant: 82),
-            imageShell.heightAnchor.constraint(equalToConstant: 82),
-            imageView.leadingAnchor.constraint(equalTo: imageShell.leadingAnchor, constant: 5),
-            imageView.trailingAnchor.constraint(equalTo: imageShell.trailingAnchor, constant: -5),
-            imageView.topAnchor.constraint(equalTo: imageShell.topAnchor, constant: 5),
-            imageView.bottomAnchor.constraint(equalTo: imageShell.bottomAnchor, constant: -5),
+            imageShell.widthAnchor.constraint(equalToConstant: 78),
+            imageShell.heightAnchor.constraint(equalToConstant: 62),
+            imageView.leadingAnchor.constraint(equalTo: imageShell.leadingAnchor, constant: 3),
+            imageView.trailingAnchor.constraint(equalTo: imageShell.trailingAnchor, constant: -3),
+            imageView.topAnchor.constraint(equalTo: imageShell.topAnchor, constant: 3),
+            imageView.bottomAnchor.constraint(equalTo: imageShell.bottomAnchor, constant: -3),
         ])
 
-        let name = label(title, size: 14, bold: true)
-        let description = label(detail, size: 11, secondary: true)
-        let loaded = label(faceImage == nil ? "○  IMAGE MISSING" : "●  IMAGE LOADED", size: 9, bold: true)
+        let name = label(title, size: 10, bold: true)
+        name.alignment = .center
+        name.lineBreakMode = .byTruncatingTail
+        let loaded = label(faceImage == nil ? "MISSING" : badge, size: 8, bold: true)
+        loaded.alignment = .center
         loaded.textColor = faceImage == nil ? NSColor.systemRed : NSColor.systemGreen
-        let copy = NSStackView(views: [name, description, loaded])
+        let copy = NSStackView(views: [name, loaded])
         copy.orientation = .vertical
-        copy.alignment = .leading
-        copy.spacing = 5
+        copy.alignment = .centerX
+        copy.spacing = 3
         copy.translatesAutoresizingMaskIntoConstraints = false
 
-        let row = NSStackView(views: [imageShell, copy])
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.spacing = 14
-        row.translatesAutoresizingMaskIntoConstraints = false
-        card.addSubview(row)
+        let content = NSStackView(views: [imageShell, copy])
+        content.orientation = .vertical
+        content.alignment = .centerX
+        content.spacing = 5
+        content.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(content)
         NSLayoutConstraint.activate([
-            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
-            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
-            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
-            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+            content.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 5),
+            content.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -5),
+            content.topAnchor.constraint(equalTo: card.topAnchor, constant: 8),
+            content.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -8),
         ])
-        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return card
     }
 
@@ -489,7 +534,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         section.spacing = 7
         section.addArrangedSubview(makeSectionHeader(
             title: "Install into your agents",
-            subtitle: "Keep both completion hooks one click away."
+            subtitle: "Keep your local completion hooks one click away."
         ))
         let claudeRow = makeAgentRow(
             source: "claude",
@@ -530,7 +575,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // as an empty white square that reads as a broken image.
         imageShell.fillColor = faceImage == nil
             ? NSColor.controlBackgroundColor
-            : (source == "claude" ? NSColor.black : NSColor.white)
+            : NSColor.black
         imageShell.borderColor = NSColor.separatorColor.withAlphaComponent(0.3)
         imageShell.cornerRadius = 10
         imageShell.translatesAutoresizingMaskIntoConstraints = false

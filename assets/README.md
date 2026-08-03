@@ -1,15 +1,18 @@
 # assets/
 
-The faces that pop up in `middle` and `turbo` mode. The default Codex and
-Claude Code faces are included here, and the script picks them up automatically:
+The faces that pop up in `middle` and `turbo` mode. Faces for the supported
+agents are included here, and the script picks them up automatically:
 
 `wilhelm-scream-banner.png` is the README artwork and is not used as a popup
 face.
 
 | File | Pops up when |
 | --- | --- |
+| `scream-openclaw.png` | OpenClaw finishes |
+| `scream-antigravity.png` | Antigravity finishes |
 | `scream-claude.png` | Claude Code finishes |
 | `scream-codex.png` | Codex finishes |
+| `scream-cursor.png` | Cursor finishes |
 | `scream-generic.png` | fallback for anything else |
 
 To replace a face, copy the image (right-click → Copy Image), then:

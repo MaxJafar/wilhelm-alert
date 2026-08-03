@@ -14,6 +14,26 @@ your coding agent's "task complete" hook.
 Antigravity, and OpenClaw wire up by hand — see
 [Install it into your agent](#install-it-into-your-agent).
 
+<table>
+  <tr>
+    <td align="center" bgcolor="#111111"><img src="assets/scream-openclaw.png" alt="OpenClaw" width="150"></td>
+    <td align="center" bgcolor="#111111"><img src="assets/scream-antigravity.png" alt="Antigravity" width="150"></td>
+    <td align="center" bgcolor="#111111"><img src="assets/scream-claude.png" alt="Claude Code" width="150"></td>
+    <td align="center" bgcolor="#111111"><img src="assets/scream-codex.png" alt="Codex" width="150"></td>
+    <td align="center" bgcolor="#111111"><img src="assets/scream-cursor.png" alt="Cursor" width="150"></td>
+  </tr>
+  <tr>
+    <td align="center">OpenClaw</td>
+    <td align="center">Antigravity</td>
+    <td align="center">Claude Code</td>
+    <td align="center">Codex</td>
+    <td align="center">Cursor</td>
+  </tr>
+</table>
+
+The faces are transparent PNGs, so each agent can keep its own character
+while sharing the same popup behavior.
+
 **Platforms:**
 
 | | Sound | Overlay | Shake | Mini app |
@@ -36,8 +56,9 @@ mini app.
 
 Set it in the mini app (`pnpm setup`), or in `~/.config/wilhelm-alert/config`.
 
-The face that pops up matches whichever agent called it — Claude Code gets
-the Claude one, Codex gets the Codex one. Auto-detected, no config needed.
+The face that pops up matches whichever agent called it — named
+`scream-<source>` faces are resolved automatically, so OpenClaw, Antigravity,
+Claude Code, Codex, and Cursor can each have a distinct scream.
 
 The popup is a small borderless overlay in the corner of the screen. It
 doesn't steal focus, so it can't eat the keystroke you were mid-way through
@@ -85,8 +106,9 @@ Agents run a *copy* of this folder, and `sounds/` is gitignored — so a copy
 made from GitHub has no audio in it, and a relative lookup finds nothing. An
 absolute path is immune to which copy is running.
 
-The repository includes default Codex and Claude faces for `middle` and
-`turbo`. To replace one, copy an image to your clipboard and run:
+The repository includes default faces for OpenClaw, Antigravity, Claude Code,
+Codex, and Cursor for `middle` and `turbo`. To replace one, copy an image to
+your clipboard and run:
 
 ```bash
 ./bin/wilhelm-face claude    # then again with: codex
@@ -155,6 +177,37 @@ But its `coding-agent` skill runs Codex or Claude Code as the actual worker,
 so installing the plugin above already makes it scream. Problem solved by
 someone else's architecture.
 
+## Why did it just scream?
+
+Every hook run is logged — the ones that screamed and the ones that were
+deliberately suppressed:
+
+```bash
+pnpm log              # last 25
+pnpm log --skipped    # only the suppressed ones
+pnpm log --all
+```
+
+```
+Aug 04, 12:39:06 AM  🔊 SCREAMED  end of turn
+                     source=claude  event=Stop  model=claude-sonnet-5  session=eee55555
+Aug 04, 12:38:44 AM  ·  skipped   ignored SessionEnd (resume)
+                     source=claude  event=SessionEnd  session=aaa11111
+```
+
+It only fires on a genuine end of turn. Three things get suppressed:
+
+- **Session lifecycle events.** `SessionEnd` is teardown, not completion —
+  it fires with `reason: resume` when another instance takes the session
+  over, and with `clear` when you clear it. Hooking it meant screaming when
+  you merely launched the app or opened a link.
+- **Re-entrant stops**, where the agent reports a stop while a stop hook is
+  already running.
+- **Anything within 3s of the last scream**, so two hooks landing together
+  can't stack. Tune with `min_interval_ms=` in your config.
+
+`--force` bypasses all of it, for testing.
+
 ## Things that will go wrong
 
 **It worked when I ran it, but the agent stays silent.** Either you changed
@@ -163,6 +216,10 @@ audio in it because `sounds/` is gitignored. Put an absolute `sound=` path
 in your config — see [Setup](#setup).
 
 **Nothing happens at all.** You didn't add a sound file. See above.
+
+**It screams at the wrong times.** Check `pnpm log` first — if you see
+`SessionEnd` entries actually firing, you're on a version before 0.5.0 and
+the plugin copy still has the old hook. Bump and update.
 
 **No overlay on macOS, just the scream.** The overlay is a tiny Swift
 program built on first use, so it needs Xcode command line tools
