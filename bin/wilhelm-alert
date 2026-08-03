@@ -1,66 +1,152 @@
 #!/usr/bin/env bash
-# Plays an alert sound when invoked. Designed to be wired into agent
-# "task finished" hooks (Claude Code Stop, Codex Stop/SessionEnd,
-# Antigravity Stop, etc.) — see integrations/ for per-tool config.
+# Screams when your coding agent finishes a task.
 #
-# Sound resolution order:
-#   1. $WILHELM_ALERT_SOUND        (explicit override)
-#   2. <repo>/sounds/wilhelm-scream.* (first match, any common audio ext)
+# Modes ($WILHELM_ALERT_MODE, default "light"):
+#   light   just the scream
+#   middle  scream + a popup of the model screaming
+#   turbo   scream + popup + the popup shakes aggressively
 #
-# Exits 0 even when no sound is found/played, so a missing sound file
-# never blocks or fails the calling agent's hook chain.
+# Which face pops up ($WILHELM_ALERT_SOURCE): claude | codex | <anything>.
+# Auto-detected from the agent's own env vars when unset.
+#
+# Everything here is best-effort and always exits 0 — a missing sound,
+# missing image, or missing permission must never break the hook chain of
+# the agent that called us.
 set -uo pipefail
 
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-sounds_dir="$script_dir/../sounds"
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+sounds_dir="$root_dir/sounds"
+assets_dir="$root_dir/assets"
+
+mode="${WILHELM_ALERT_MODE:-light}"
+case "$mode" in
+  light|middle|turbo) ;;
+  *)
+    echo "wilhelm-alert: unknown mode '$mode' (want light|middle|turbo), using light" >&2
+    mode="light"
+    ;;
+esac
+
+# Codex sets PLUGIN_ROOT *and* CLAUDE_PLUGIN_ROOT (for plugin compat), so
+# check the Codex-only one first or every Codex run would look like Claude.
+detect_source() {
+  if [ -n "${WILHELM_ALERT_SOURCE:-}" ]; then
+    printf '%s' "$WILHELM_ALERT_SOURCE"
+  elif [ -n "${PLUGIN_ROOT:-}" ]; then
+    printf 'codex'
+  elif [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
+    printf 'claude'
+  else
+    printf 'generic'
+  fi
+}
+source_id="$(detect_source)"
+
+first_match() {
+  local f
+  for f in "$@"; do
+    [ -f "$f" ] && { printf '%s' "$f"; return; }
+  done
+}
 
 resolve_sound() {
   if [ -n "${WILHELM_ALERT_SOUND:-}" ]; then
     printf '%s' "$WILHELM_ALERT_SOUND"
     return
   fi
-  for f in "$sounds_dir"/wilhelm-scream.*; do
-    if [ -f "$f" ]; then
-      printf '%s' "$f"
-      return
-    fi
-  done
+  first_match "$sounds_dir"/wilhelm-scream.*
 }
 
-sound="$(resolve_sound)"
+resolve_image() {
+  local img
+  img="$(first_match "$assets_dir/scream-$source_id".*)"
+  [ -n "$img" ] || img="$(first_match "$assets_dir/scream-generic".*)"
+  printf '%s' "$img"
+}
 
-if [ -z "$sound" ] || [ ! -f "$sound" ]; then
-  echo "wilhelm-alert: no sound file found." >&2
-  echo "  Drop one at $sounds_dir/wilhelm-scream.mp3 (or .wav/.aiff)," >&2
-  echo "  or export WILHELM_ALERT_SOUND=/path/to/sound.mp3" >&2
-  exit 0
-fi
-
-play() {
+play_sound() {
+  local sound="$1"
   case "$(uname -s)" in
-    Darwin)
-      afplay "$sound"
-      ;;
+    Darwin) afplay "$sound" ;;
     Linux)
-      if command -v paplay >/dev/null 2>&1; then
-        paplay "$sound"
-      elif command -v aplay >/dev/null 2>&1; then
-        aplay "$sound" >/dev/null 2>&1
-      elif command -v ffplay >/dev/null 2>&1; then
-        ffplay -nodisp -autoexit -loglevel quiet "$sound"
-      else
-        echo "wilhelm-alert: no audio player found (tried paplay, aplay, ffplay)" >&2
-        exit 1
+      if command -v paplay >/dev/null 2>&1; then paplay "$sound"
+      elif command -v aplay >/dev/null 2>&1; then aplay "$sound" >/dev/null 2>&1
+      elif command -v ffplay >/dev/null 2>&1; then ffplay -nodisp -autoexit -loglevel quiet "$sound"
       fi
-      ;;
-    *)
-      echo "wilhelm-alert: unsupported OS $(uname -s)" >&2
-      exit 1
       ;;
   esac
 }
 
-# Run detached so we never block/delay the caller's hook chain.
-( play >/dev/null 2>&1 & disown ) 2>/dev/null || play >/dev/null 2>&1 &
+# Rattles the Quick Look panel. Needs Accessibility permission for whatever
+# runs this (System Settings > Privacy & Security > Accessibility). Without
+# it this silently no-ops and turbo degrades to a very still popup.
+shake_popup() {
+  osascript <<'APPLESCRIPT' >/dev/null 2>&1
+try
+  tell application "System Events"
+    if exists process "qlmanage" then
+      tell process "qlmanage"
+        set {origX, origY} to position of window 1
+        repeat 18 times
+          set position of window 1 to {origX + (random number from -30 to 30), origY + (random number from -30 to 30)}
+          delay 0.04
+        end repeat
+        set position of window 1 to {origX, origY}
+      end tell
+    end if
+  end tell
+end try
+APPLESCRIPT
+}
+
+show_popup() {
+  local img="$1" ql_pid
+  case "$(uname -s)" in
+    Darwin)
+      qlmanage -p "$img" >/dev/null 2>&1 &
+      ql_pid=$!
+      if [ "$mode" = "turbo" ]; then
+        sleep 0.4
+        shake_popup
+      fi
+      sleep "${WILHELM_ALERT_POPUP_SECONDS:-3}"
+      kill "$ql_pid" 2>/dev/null
+      ;;
+    Linux)
+      # No auto-close and no shake — whatever handles images gets it.
+      xdg-open "$img" >/dev/null 2>&1
+      ;;
+  esac
+}
+
+# Resolve and complain in the foreground, so the reason for a silent alert
+# actually reaches the user; only the playback itself gets detached.
+sound="$(resolve_sound)"
+if [ -n "$sound" ]; then
+  case "$(uname -s)" in
+    Darwin|Linux)
+      ( play_sound "$sound" >/dev/null 2>&1 & disown ) 2>/dev/null \
+        || play_sound "$sound" >/dev/null 2>&1 &
+      ;;
+    *) echo "wilhelm-alert: unsupported OS $(uname -s), no sound played" >&2 ;;
+  esac
+else
+  echo "wilhelm-alert: no sound file found." >&2
+  echo "  Drop one at $sounds_dir/wilhelm-scream.mp3 (or .wav/.aiff)," >&2
+  echo "  or set WILHELM_ALERT_SOUND=/path/to/sound.mp3" >&2
+fi
+
+if [ "$mode" != "light" ]; then
+  image="$(resolve_image)"
+  if [ -z "$image" ]; then
+    echo "wilhelm-alert: no popup image for '$source_id' — showing nothing." >&2
+    echo "  Add one at $assets_dir/scream-$source_id.png (see assets/README.md)" >&2
+  elif [ "$(uname -s)" = "Darwin" ] && ! command -v qlmanage >/dev/null 2>&1; then
+    echo "wilhelm-alert: qlmanage not found, cannot show popup" >&2
+  else
+    ( show_popup "$image" >/dev/null 2>&1 & disown ) 2>/dev/null \
+      || show_popup "$image" >/dev/null 2>&1 &
+  fi
+fi
 
 exit 0

@@ -1,36 +1,52 @@
 # wilhelm-alert
 
-Apache-2.0, pnpm-managed plugin that plays an alert sound when a coding
-agent finishes a task. Ships as a real **Claude Code plugin** and a real
-**Codex CLI plugin** (both installable via their native marketplace
-systems), plus hook config for Antigravity and a best-effort integration
-for OpenClaw.
+Your agent finishes a task. It screams. You look up.
 
-No daemon, no polling — each tool just runs `bin/wilhelm-alert` itself via
-its own "task finished" hook.
+That's it. That's the plugin.
 
-## Install (pnpm)
+It's the [Wilhelm scream](https://en.wikipedia.org/wiki/Wilhelm_scream) —
+the stock sound effect that's been in a few hundred movies — fired from
+your coding agent's "task complete" hook. Works with Claude Code and Codex
+as a real installable plugin, plus hook config for Antigravity and OpenClaw.
+
+## Modes
+
+| Mode | What happens |
+| --- | --- |
+| `light` | Just the scream. Tasteful. Restrained. Cowardly. |
+| `middle` | The scream, plus a popup of the model itself screaming at you. |
+| `turbo` | The scream, the popup, and the popup shakes like it's being attacked. |
+
+```bash
+export WILHELM_ALERT_MODE=turbo   # light | middle | turbo (default: light)
+```
+
+The face that pops up matches whichever agent called it — Claude Code gets
+the Claude one, Codex gets the Codex one. Auto-detected, no config needed.
+
+## Setup
 
 ```bash
 pnpm install
 ```
 
-There's nothing to build — this package is scripts and plugin manifests,
-no compile step.
+Then feed it two things it doesn't ship with:
 
-## 1. Add a sound file
+**A scream.** Drop `sounds/wilhelm-scream.mp3` (`.wav`/`.aiff` fine too), or
+point `WILHELM_ALERT_SOUND` at any audio file. The real Wilhelm scream is a
+copyrighted sound effect, so you bring your own — see
+[sounds/README.md](sounds/README.md).
 
-No audio is bundled (see [sounds/README.md](sounds/README.md) for why).
-Drop a file at `sounds/wilhelm-scream.mp3` (`.wav`/`.aiff` also work), or
-set `WILHELM_ALERT_SOUND=/path/to/file`.
+**Faces**, if you want `middle` or `turbo`. Drop `assets/scream-claude.png`
+and `assets/scream-codex.png` — see [assets/README.md](assets/README.md).
 
-Test it directly:
+Then check it works:
 
 ```bash
-./bin/wilhelm-alert
+WILHELM_ALERT_MODE=turbo ./bin/wilhelm-alert
 ```
 
-## 2. Install the plugin
+## Install it into your agent
 
 ### Claude Code
 
@@ -39,18 +55,6 @@ claude plugin marketplace add ./
 claude plugin install wilhelm-alert@wilhelm-alert-marketplace
 ```
 
-Once published to a git host, others install it the normal way:
-
-```bash
-claude plugin marketplace add <owner>/<repo>
-claude plugin install wilhelm-alert@wilhelm-alert-marketplace
-```
-
-This registers a `Stop` hook (fires when Claude finishes responding) via
-[hooks/hooks.json](hooks/hooks.json), declared in
-[.claude-plugin/plugin.json](.claude-plugin/plugin.json) /
-[.claude-plugin/marketplace.json](.claude-plugin/marketplace.json).
-
 ### Codex CLI
 
 ```bash
@@ -58,54 +62,52 @@ codex plugin marketplace add .
 codex plugin add wilhelm-alert@wilhelm-alert-marketplace
 ```
 
-Declared in [.codex-plugin/plugin.json](.codex-plugin/plugin.json) /
-[.agents/plugins/marketplace.json](.agents/plugins/marketplace.json).
-It reuses the same [hooks/hooks.json](hooks/hooks.json) as the Claude Code
-plugin — Codex sets `CLAUDE_PLUGIN_ROOT` for compatibility alongside its
-own `PLUGIN_ROOT`, so one hook file works for both. Fires on `Stop` and
-`SessionEnd`.
+Both hook `Stop` (and `SessionEnd` on Codex) via
+[hooks/hooks.json](hooks/hooks.json). One hook file serves both, because
+Codex helpfully sets `CLAUDE_PLUGIN_ROOT` for plugin compatibility.
 
 ### Antigravity
 
-No plugin/marketplace format confirmed yet — wire the hook in manually.
-Drop [integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
+No plugin format to hook into yet, so do it by hand: drop
+[integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
 into `.agents/` in your workspace or `~/.gemini/config/`, with the path to
-`bin/wilhelm-alert` filled in. Fires on the `Stop` event (execution loop
-terminates).
+`bin/wilhelm-alert` filled in.
 
 ### OpenClaw
 
-See [integrations/openclaw/](integrations/openclaw/). OpenClaw has no
-built-in "task finished" event, only `command:stop` for a manual `/stop`.
-In practice OpenClaw's `coding-agent` skill runs Codex/Claude Code/OpenCode
-as the real worker, so installing the plugin above already covers it.
+[integrations/openclaw/](integrations/openclaw/). OpenClaw has no "task
+finished" event at all — only `command:stop` when you manually type `/stop`.
+But its `coding-agent` skill runs Codex or Claude Code as the actual worker,
+so installing the plugin above already makes it scream. Problem solved by
+someone else's architecture.
 
-## How it works
+## Things that will go wrong
 
-`bin/wilhelm-alert` finds a sound file and plays it (`afplay` on macOS,
-`paplay`/`aplay`/`ffplay` on Linux), then exits immediately — it always
-exits 0, even with no sound configured, so it never blocks or fails an
-agent's hook chain. Windows isn't supported.
+**The turbo shake does nothing.** macOS won't let a random script move
+windows around until you grant Accessibility permission to whatever's
+running it (System Settings → Privacy & Security → Accessibility). Until
+then, turbo is just middle mode with extra confidence. The script no-ops
+quietly instead of erroring.
 
-## Repo layout
+**Nothing happens at all.** You didn't add a sound file. See above.
 
-```
-bin/wilhelm-alert          the player script itself
-hooks/hooks.json           shared Stop/SessionEnd hook definition
-.claude-plugin/            Claude Code plugin + marketplace manifests
-.codex-plugin/             Codex CLI plugin manifest
-.agents/plugins/           Codex CLI marketplace manifest
-integrations/antigravity/  manual hook config for Antigravity
-integrations/openclaw/     best-effort hook + explanation of the limitation
-sounds/                    put your own sound file here (gitignored)
-```
+**Linux:** sound works (`paplay`/`aplay`/`ffplay`), popup opens via
+`xdg-open` but won't auto-close, shake doesn't exist. **Windows:** no.
 
-## Before publishing
+Every failure path exits 0 on purpose. A joke plugin that breaks your
+agent's hook chain is no longer a joke, it's a bug report.
 
-This scaffold ships with placeholder author info (`"Your Name"`) in
-`package.json`, `NOTICE`, and both `plugin.json` files, and empty
-`repository`/`homepage` fields in `package.json` — fill those in, then
-`git init` (if you haven't already) and push to a host before running
-`claude plugin marketplace add <owner>/<repo>` from elsewhere. Publishing
-to the npm registry (`npm publish` / `pnpm publish`) is a separate,
-deliberate step — nothing here does that for you.
+## Trademarks, since this is public
+
+The popup images are yours to supply, and the fun ones are inevitably going
+to be somebody's logo with a mouth drawn on it. That's parody, and parody of
+a logo is not the same as a license to use it — this project doesn't claim
+any rights to Anthropic's, OpenAI's, or anyone else's marks, isn't affiliated
+with or endorsed by them, and ships no such images itself. Draw what you
+like on your own machine; think twice before committing it to a public repo
+with someone's brand on it.
+
+## License
+
+[Apache-2.0](LICENSE). It's a pet project that makes a computer scream —
+take it, fork it, make it worse.
