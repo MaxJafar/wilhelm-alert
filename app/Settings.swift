@@ -10,6 +10,13 @@ let repoRoot: String = {
     while let arg = it.next() {
         if arg == "--root", let value = it.next() { return value }
     }
+    // Launched from the .app bundle there are no arguments and the working
+    // directory is "/", so the bundle records where the repo lives.
+    if let pointer = Bundle.main.path(forResource: "root", ofType: "txt"),
+       let recorded = try? String(contentsOfFile: pointer, encoding: .utf8) {
+        let trimmed = recorded.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { return trimmed }
+    }
     return FileManager.default.currentDirectoryPath
 }()
 

@@ -54,7 +54,7 @@ mini app.
 | `middle` | The scream, plus a popup of the model itself screaming at you. |
 | `turbo` | The scream, the popup, and the popup shakes like it's being attacked. |
 
-Set it in the mini app (`pnpm setup`), or in `~/.config/wilhelm-alert/config`.
+Set it in the app (`pnpm app`), or in `~/.config/wilhelm-alert/config`.
 
 The face that pops up matches whichever agent called it — named
 `scream-<source>` faces are resolved automatically, so OpenClaw, Antigravity,
@@ -70,12 +70,16 @@ typing, and clicking it dismisses it early.
 git clone https://github.com/MaxJafar/wilhelm-alert.git
 cd wilhelm-alert
 pnpm install
-pnpm setup
+pnpm app
 ```
 
-`pnpm setup` opens a little app: pick your mode, hit **Test it** to hear it,
-and install into Claude Code or Codex with a button. No browser, no
-localhost, no menu bar clutter.
+`pnpm app` installs **Wilhelm Alert.app** into `~/Applications` and opens it.
+After that it's in Spotlight — ⌘-space, "wilhelm" — so you never need to come
+back to this folder. Pick your mode, hit **Test it** to hear it, and install
+into your agents with a button. No browser, no localhost, no menu bar clutter.
+
+Don't want the app in `~/Applications`? `pnpm panel` opens the same window
+straight from the repo.
 
 Prefer the terminal? The mode lives in `~/.config/wilhelm-alert/config`:
 
@@ -125,7 +129,7 @@ WILHELM_ALERT_MODE=turbo ./bin/wilhelm-alert
 
 ## Install it into your agent
 
-`pnpm setup` does this with a button. By hand:
+`pnpm app` does this with a button. By hand:
 
 ### Claude Code
 
@@ -161,13 +165,13 @@ a *copied* snapshot of this folder, pinned by the version in `plugin.json`,
 so edits are invisible to them until you bump the version and update. This
 is the single most confusing thing about the whole project.
 
-Both hook `Stop` (and `SessionEnd` on Codex) via
+Both hook `Stop` — and only `Stop` — via
 [hooks/hooks.json](hooks/hooks.json). One hook file serves both, because
 Codex helpfully sets `CLAUDE_PLUGIN_ROOT` for plugin compatibility.
 
 ### Cursor
 
-`pnpm setup` has a button for this, which merges into your existing
+`pnpm app` has a button for this, which merges into your existing
 `~/.cursor/hooks.json` rather than overwriting it. By hand, see
 [integrations/cursor/](integrations/cursor/README.md). Hook the `stop`
 event, not `afterAgentResponse` — the latter fires after every assistant

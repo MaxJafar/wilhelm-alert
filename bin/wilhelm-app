@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# Builds "Wilhelm Alert.app" so the panel is in Spotlight, Launchpad and the
+# Dock instead of behind a `cd` and a pnpm script.
+#
+#   wilhelm-app            install to ~/Applications
+#   wilhelm-app --open     install, then launch it
+#   wilhelm-app --uninstall
+set -uo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+app_dir="$HOME/Applications/Wilhelm Alert.app"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "wilhelm-app: macOS only (the panel is AppKit)." >&2
+  exit 1
+fi
+
+if [ "${1:-}" = "--uninstall" ]; then
+  rm -rf "$app_dir" && echo "Removed $app_dir"
+  exit 0
+fi
+
+# Fail before writing a bundle that can't launch.
+panel_binary="$("$root_dir/bin/wilhelm-build" settings)"
+if [ -z "$panel_binary" ] || [ ! -x "$panel_binary" ]; then
+  echo "wilhelm-app: could not build the panel (needs Xcode command line tools)." >&2
+  exit 1
+fi
+
+macos_dir="$app_dir/Contents/MacOS"
+resources_dir="$app_dir/Contents/Resources"
+rm -rf "$app_dir"
+mkdir -p "$macos_dir" "$resources_dir" || exit 1
+
+# The real binary has to live inside the bundle. A shell launcher that execs
+# a binary elsewhere on disk looks to LaunchServices like the app exited
+# immediately, and the window never appears.
+cp "$panel_binary" "$macos_dir/WilhelmAlert" || exit 1
+chmod +x "$macos_dir/WilhelmAlert"
+
+# Launched from Finder there are no arguments and the working directory is
+# "/", so the bundle carries a pointer back to the repo.
+printf '%s\n' "$root_dir" > "$resources_dir/root.txt"
+
+cat > "$app_dir/Contents/Info.plist" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key><string>Wilhelm Alert</string>
+  <key>CFBundleDisplayName</key><string>Wilhelm Alert</string>
+  <key>CFBundleIdentifier</key><string>com.github.maxjafar.wilhelm-alert</string>
+  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>1.0</string>
+  <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleExecutable</key><string>WilhelmAlert</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>NSHighResolutionCapable</key><true/>
+</dict>
+</plist>
+PLIST
+
+# Icon: assets/app-icon.png wins if you drop one in, otherwise reuse a face.
+icon_source=""
+for candidate in "$root_dir/assets/app-icon.png" "$root_dir/assets/scream-claude.png"; do
+  [ -f "$candidate" ] && { icon_source="$candidate"; break; }
+done
+
+if [ -n "$icon_source" ] && command -v iconutil >/dev/null 2>&1; then
+  iconset="$(mktemp -d)/AppIcon.iconset"
+  mkdir -p "$iconset"
+  for size in 16 32 128 256 512; do
+    sips -z $size $size "$icon_source" --out "$iconset/icon_${size}x${size}.png" >/dev/null 2>&1
+    sips -z $((size * 2)) $((size * 2)) "$icon_source" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null 2>&1
+  done
+  iconutil -c icns "$iconset" -o "$resources_dir/AppIcon.icns" >/dev/null 2>&1
+  rm -rf "$(dirname "$iconset")"
+fi
+
+# Without this, Spotlight and Launchpad can take minutes to notice the bundle.
+touch "$app_dir"
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister \
+  -f "$app_dir" >/dev/null 2>&1
+
+echo "Installed $app_dir"
+echo "Open it from Spotlight (⌘-space, \"Wilhelm\") or Launchpad."
+
+[ "${1:-}" = "--open" ] && open "$app_dir"
+exit 0
