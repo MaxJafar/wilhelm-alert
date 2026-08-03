@@ -171,6 +171,99 @@ final class ModeCardView: NSView {
     }
 }
 
+// MARK: - connection status
+
+enum AgentStatus {
+    case connected
+    case needsApproval
+    case notConnected
+
+    var text: String {
+        switch self {
+        case .connected: return "CONNECTED"
+        case .needsApproval: return "APPROVE IT"
+        case .notConnected: return "NOT SET UP"
+        }
+    }
+
+    var color: NSColor {
+        switch self {
+        case .connected: return .systemGreen
+        case .needsApproval: return .systemOrange
+        case .notConnected: return .secondaryLabelColor
+        }
+    }
+
+    var symbol: String? {
+        switch self {
+        case .connected: return "checkmark.circle.fill"
+        case .needsApproval: return "exclamationmark.triangle.fill"
+        case .notConnected: return nil
+        }
+    }
+}
+
+// Status is read straight off each agent's own config file. Shelling out to
+// `claude plugin list` and friends would be authoritative too, but it's slow
+// enough to stall the window every time this refreshes.
+enum AgentProbe {
+    static func status(for source: String) -> AgentStatus {
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        switch source {
+        case "claude":
+            return jsonBool(
+                at: home.appendingPathComponent(".claude/settings.json"),
+                path: ["enabledPlugins", "wilhelm-alert@wilhelm-alert-marketplace"]
+            ) == true ? .connected : .notConnected
+
+        case "codex":
+            // Codex reports a plugin as enabled while silently refusing to run
+            // its hooks until they've been reviewed, so "enabled" alone would
+            // be a lie here. The trust entry is what actually makes it fire.
+            let toml = text(at: home.appendingPathComponent(".codex/config.toml"))
+            guard toml.contains("[plugins.\"wilhelm-alert@wilhelm-alert-marketplace\"]") else {
+                return .notConnected
+            }
+            let trusted = toml.contains("[hooks.state.\"wilhelm-alert@")
+            return trusted ? .connected : .needsApproval
+
+        case "cursor":
+            return text(at: home.appendingPathComponent(".cursor/hooks.json"))
+                .contains("wilhelm-alert") ? .connected : .notConnected
+
+        case "openclaw":
+            let config = text(at: home.appendingPathComponent(".openclaw/config.json"))
+            return config.contains("wilhelm-alert") ? .connected : .notConnected
+
+        case "antigravity":
+            for candidate in [".gemini/config/hooks.json", ".antigravity/hooks.json"] {
+                if text(at: home.appendingPathComponent(candidate)).contains("wilhelm-alert") {
+                    return .connected
+                }
+            }
+            return .notConnected
+
+        default:
+            return .notConnected
+        }
+    }
+
+    private static func text(at url: URL) -> String {
+        (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+    }
+
+    private static func jsonBool(at url: URL, path: [String]) -> Bool? {
+        guard let data = try? Data(contentsOf: url),
+              var node = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        for key in path.dropLast() {
+            guard let next = node[key] as? [String: Any] else { return nil }
+            node = next
+        }
+        return path.last.flatMap { node[$0] as? Bool }
+    }
+}
+
 // MARK: - settings controller
 
 @MainActor
@@ -179,6 +272,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var status: NSTextField!
     private var modeCards: [ModeCardView] = []
     private var statusCard: RoundedCardView!
+    private var rosterBadges: [String: NSTextField] = [:]
+    private var installButtons: [String: NSButton] = [:]
+    private var installBadges: [String: (NSStackView, NSImageView, NSTextField)] = [:]
+    private var headerBadge: NSTextField!
 
     private let modes = [
         ("light", "Light", "Just the scream.", "QUIET"),
@@ -273,24 +370,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         container.translatesAutoresizingMaskIntoConstraints = false
         container.heightAnchor.constraint(equalToConstant: 68).isActive = true
 
-        let iconCard = RoundedCardView()
-        iconCard.fillColor = wilhelmAccent.withAlphaComponent(0.13)
-        iconCard.borderColor = wilhelmAccent.withAlphaComponent(0.3)
-        iconCard.cornerRadius = 14
-        iconCard.translatesAutoresizingMaskIntoConstraints = false
-
-        let iconStrip = makeIconStrip()
-        iconStrip.translatesAutoresizingMaskIntoConstraints = false
-        iconCard.addSubview(iconStrip)
-        NSLayoutConstraint.activate([
-            iconCard.widthAnchor.constraint(equalToConstant: 132),
-            iconCard.heightAnchor.constraint(equalToConstant: 46),
-            iconStrip.leadingAnchor.constraint(equalTo: iconCard.leadingAnchor, constant: 8),
-            iconStrip.trailingAnchor.constraint(equalTo: iconCard.trailingAnchor, constant: -8),
-            iconStrip.topAnchor.constraint(equalTo: iconCard.topAnchor, constant: 8),
-            iconStrip.bottomAnchor.constraint(equalTo: iconCard.bottomAnchor, constant: -8),
-        ])
-
         let eyebrow = label("WILHELM ALERT", size: 10, bold: true)
         eyebrow.textColor = wilhelmAccent
         let heading = label("When agents finish, they scream.", size: 20, bold: true)
@@ -301,15 +380,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         copy.spacing = 4
         copy.translatesAutoresizingMaskIntoConstraints = false
 
-        let ready = label("READY", size: 10, bold: true)
-        ready.textColor = NSColor.systemGreen
+        let ready = label("IDLE", size: 10, bold: true)
+        ready.textColor = NSColor.secondaryLabelColor
         ready.alignment = .center
         ready.wantsLayer = true
-        ready.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.12).cgColor
+        ready.layer?.backgroundColor = NSColor.secondaryLabelColor.withAlphaComponent(0.12).cgColor
         ready.layer?.cornerRadius = 9
         ready.translatesAutoresizingMaskIntoConstraints = false
+        headerBadge = ready
 
-        let row = NSStackView(views: [iconCard, copy, ready])
+        let row = NSStackView(views: [copy, ready])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 14
@@ -326,41 +406,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         ])
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
         return container
-    }
-
-    private func makeIconStrip() -> NSView {
-        let row = NSStackView()
-        row.orientation = .horizontal
-        row.alignment = .centerY
-        row.distribution = .fillEqually
-        row.spacing = 4
-
-        for (source, _, _) in agents {
-            let tile = RoundedCardView()
-            tile.fillColor = NSColor.black
-            tile.borderColor = NSColor.white.withAlphaComponent(0.16)
-            tile.cornerRadius = 8
-            tile.translatesAutoresizingMaskIntoConstraints = false
-
-            let imageView = NSImageView()
-            imageView.image = NSImage(contentsOfFile: repoRoot + "/assets/scream-" + source + ".png")
-            imageView.imageScaling = .scaleAxesIndependently
-            imageView.translatesAutoresizingMaskIntoConstraints = false
-            imageView.wantsLayer = true
-            imageView.layer?.cornerRadius = 7
-            imageView.layer?.masksToBounds = true
-            tile.addSubview(imageView)
-            NSLayoutConstraint.activate([
-                tile.widthAnchor.constraint(equalToConstant: 20),
-                tile.heightAnchor.constraint(equalToConstant: 30),
-                imageView.leadingAnchor.constraint(equalTo: tile.leadingAnchor, constant: 2),
-                imageView.trailingAnchor.constraint(equalTo: tile.trailingAnchor, constant: -2),
-                imageView.topAnchor.constraint(equalTo: tile.topAnchor, constant: 2),
-                imageView.bottomAnchor.constraint(equalTo: tile.bottomAnchor, constant: -2),
-            ])
-            row.addArrangedSubview(tile)
-        }
-        return row
     }
 
     private func makeFacesSection() -> NSView {
@@ -424,9 +469,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let name = label(title, size: 10, bold: true)
         name.alignment = .center
         name.lineBreakMode = .byTruncatingTail
-        let loaded = label(faceImage == nil ? "MISSING" : badge, size: 8, bold: true)
+
+        let state = AgentProbe.status(for: source)
+        let loaded = label(faceImage == nil ? "MISSING" : state.text, size: 8, bold: true)
         loaded.alignment = .center
-        loaded.textColor = faceImage == nil ? NSColor.systemRed : NSColor.systemGreen
+        loaded.textColor = faceImage == nil ? NSColor.systemRed : state.color
+        rosterBadges[source] = loaded
+
         let copy = NSStackView(views: [name, loaded])
         copy.orientation = .vertical
         copy.alignment = .centerX
@@ -609,18 +658,31 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         copy.translatesAutoresizingMaskIntoConstraints = false
         copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
 
-        let install = NSButton(title: "Install / Update", target: self, action: #selector(installAgent(_:)))
+        let install = NSButton(title: "Install", target: self, action: #selector(installAgent(_:)))
         install.bezelStyle = .rounded
         install.controlSize = .regular
         install.font = .systemFont(ofSize: 11, weight: .semibold)
         install.tag = tag
         install.setContentHuggingPriority(.required, for: .horizontal)
+        installButtons[source] = install
+
+        let badgeIcon = NSImageView()
+        badgeIcon.translatesAutoresizingMaskIntoConstraints = false
+        badgeIcon.widthAnchor.constraint(equalToConstant: 13).isActive = true
+        badgeIcon.heightAnchor.constraint(equalToConstant: 13).isActive = true
+        let badgeText = label("", size: 10, bold: true)
+        let badge = NSStackView(views: [badgeIcon, badgeText])
+        badge.orientation = .horizontal
+        badge.alignment = .centerY
+        badge.spacing = 4
+        badge.setContentHuggingPriority(.required, for: .horizontal)
+        installBadges[source] = (badge, badgeIcon, badgeText)
 
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let row = NSStackView(views: [imageShell, copy, spacer, install])
+        let row = NSStackView(views: [imageShell, copy, spacer, badge, install])
         row.orientation = .horizontal
         row.alignment = .centerY
         row.spacing = 12
@@ -732,6 +794,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // until they're approved in the TUI, so say so here rather than
         // letting it look finished.
         if !isClaude {
+            refreshStatuses()
             say("Installed. Now start `codex` in a terminal and approve the hook review — it won't fire until you do.")
             return
         }
@@ -740,7 +803,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
             .split(separator: "\n")
             .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
             .map(String.init) ?? "done"
+        refreshStatuses()
         say(firstLine.trimmingCharacters(in: .whitespaces))
+    }
+
+    // Re-reads every agent's config and repaints the badges. Cheap enough to
+    // run on every window activation, which is what makes the panel reflect
+    // an install (or an approval) done in a terminal a moment ago.
+    private func refreshStatuses() {
+        var connected = 0
+        for (source, _, _) in agents {
+            let state = AgentProbe.status(for: source)
+            if state == .connected { connected += 1 }
+
+            if let badge = rosterBadges[source],
+               badge.stringValue != "MISSING" {
+                badge.stringValue = state.text
+                badge.textColor = state.color
+            }
+
+            if let (stack, icon, text) = installBadges[source] {
+                stack.isHidden = state == .notConnected
+                text.stringValue = state.text
+                text.textColor = state.color
+                icon.image = state.symbol.flatMap {
+                    NSImage(systemSymbolName: $0, accessibilityDescription: state.text)
+                }
+                icon.contentTintColor = state.color
+            }
+
+            installButtons[source]?.title = state == .notConnected ? "Install" : "Update"
+        }
+
+        headerBadge?.stringValue = connected == 0 ? "IDLE" : "\(connected) LIVE"
+        headerBadge?.textColor = connected == 0 ? .secondaryLabelColor : .systemGreen
+        headerBadge?.layer?.backgroundColor = (connected == 0 ? NSColor.secondaryLabelColor : NSColor.systemGreen)
+            .withAlphaComponent(0.12).cgColor
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        refreshStatuses()
     }
 
     // Cursor has no plugin CLI, so this edits ~/.cursor/hooks.json directly —
@@ -775,6 +877,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 options: [.prettyPrinted, .withoutEscapingSlashes]
             )
             try data.write(to: hooksURL, options: .atomic)
+            refreshStatuses()
             say("Added the stop hook to ~/.cursor/hooks.json — restart Cursor.")
         } catch {
             say("Couldn't write ~/.cursor/hooks.json: \(error.localizedDescription)")
