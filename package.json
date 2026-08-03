@@ -1,6 +1,6 @@
 {
   "name": "wilhelm-alert",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Plays an alert sound when your coding agent (Claude Code, Codex, Antigravity, OpenClaw) finishes a task",
   "license": "Apache-2.0",
   "author": "MaxJafar",
@@ -24,7 +24,8 @@
     "wilhelm-settings": "bin/wilhelm-settings",
     "wilhelm-face": "bin/wilhelm-face",
     "wilhelm-log": "bin/wilhelm-log.js",
-    "wilhelm-app": "bin/wilhelm-app"
+    "wilhelm-app": "bin/wilhelm-app",
+    "wilhelm-update": "bin/wilhelm-update"
   },
   "scripts": {
     "face": "./bin/wilhelm-face",
@@ -33,7 +34,8 @@
     "postinstall": "./bin/wilhelm-build overlay >/dev/null 2>&1 || true",
     "log": "./bin/wilhelm-log",
     "app": "./bin/wilhelm-app --open",
-    "panel": "./bin/wilhelm-settings"
+    "panel": "./bin/wilhelm-settings",
+    "update-alert": "./bin/wilhelm-update"
   },
   "files": [
     ".agents",

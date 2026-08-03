@@ -192,6 +192,31 @@ But its `coding-agent` skill runs Codex or Claude Code as the actual worker,
 so installing the plugin above already makes it scream. Problem solved by
 someone else's architecture.
 
+## Updating
+
+The app checks GitHub on launch and shows an **Update** button when there's
+a newer version. One press pulls, rebuilds, refreshes the Mac app, and
+re-lands the plugin in every agent you've connected.
+
+Same thing from the terminal:
+
+```bash
+pnpm update-alert          # or: ./bin/wilhelm-update
+./bin/wilhelm-update --check
+```
+
+It **refuses to pull over uncommitted changes** and tells you which files are
+in the way — a convenience button shouldn't be able to eat your work. Commit
+or stash, then retry.
+
+Two things to expect afterwards: restart Claude Code to load the new plugin,
+and if `hooks/hooks.json` changed, Codex will ask you to approve the hook
+again (its trust is a hash of the hook, so any edit invalidates it).
+
+The update check is a plain GET of this repo's `package.json` on GitHub. It
+sends nothing about you, and everything still works offline — the button just
+says it couldn't reach GitHub.
+
 ## Why did it just scream?
 
 Every hook run is logged — the ones that screamed and the ones that were

@@ -283,6 +283,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var installButtons: [String: NSButton] = [:]
     private var installBadges: [String: (NSStackView, NSImageView, NSTextField)] = [:]
     private var headerBadge: NSTextField!
+    private var updateDetail: NSTextField!
+    private var updateButton: NSButton!
+    private var pendingVersion: String?
 
     private let modes = [
         ("light", "Light", "Just the scream.", "QUIET"),
@@ -360,6 +363,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         addFullWidth(makeTestRow(), to: stack)
         addFullWidth(makeSeparator(), to: stack)
         addFullWidth(makeInstallSection(), to: stack)
+        addFullWidth(makeSeparator(), to: stack)
+        addFullWidth(makeUpdateSection(), to: stack)
         addFullWidth(makeStatusCard(), to: stack)
 
         window.makeKeyAndOrderFront(nil)
@@ -704,6 +709,141 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return card
     }
 
+    private func makeUpdateSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 7
+        section.addArrangedSubview(makeSectionHeader(
+            title: "Updates",
+            subtitle: "Pull the latest and push it into every agent at once."
+        ))
+
+        let card = RoundedCardView()
+        card.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.58)
+        card.cornerRadius = 15
+        card.heightAnchor.constraint(equalToConstant: 68).isActive = true
+        card.widthAnchor.constraint(equalToConstant: 560).isActive = true
+
+        let icon = NSImageView(image: NSImage(
+            systemSymbolName: "arrow.triangle.2.circlepath",
+            accessibilityDescription: "Updates"
+        ) ?? NSImage())
+        icon.contentTintColor = wilhelmAccent
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.widthAnchor.constraint(equalToConstant: 22).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 22).isActive = true
+
+        let name = label("Version \(localVersion())", size: 13, bold: true)
+        updateDetail = label("Checking for updates…", size: 11, secondary: true)
+        let copy = NSStackView(views: [name, updateDetail])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 3
+        copy.translatesAutoresizingMaskIntoConstraints = false
+
+        updateButton = NSButton(title: "Check", target: self, action: #selector(runUpdate))
+        updateButton.bezelStyle = .rounded
+        updateButton.font = .systemFont(ofSize: 11, weight: .semibold)
+        updateButton.setContentHuggingPriority(.required, for: .horizontal)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let row = NSStackView(views: [icon, copy, spacer, updateButton])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 11),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -11),
+        ])
+
+        section.addArrangedSubview(card)
+        checkForUpdate()
+        return section
+    }
+
+    private func localVersion() -> String {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: repoRoot + "/package.json")),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let version = json["version"] as? String
+        else { return "unknown" }
+        return version
+    }
+
+    // Runs off the main thread: this reaches out to GitHub, and a slow or
+    // dead network must never freeze the window.
+    private func checkForUpdate() {
+        let script = repoRoot + "/bin/wilhelm-update"
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let output = Self.capture(script, args: ["--check"], cwd: repoRoot)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                let parts = output.split(separator: " ").map(String.init)
+                switch parts.first {
+                case "update":
+                    self.pendingVersion = parts.count > 1 ? parts[1] : nil
+                    self.updateDetail.stringValue = "Version \(self.pendingVersion ?? "?") is available."
+                    self.updateDetail.textColor = .systemGreen
+                    self.updateButton.title = "Update"
+                    self.updateButton.keyEquivalent = ""
+                case "current":
+                    self.pendingVersion = nil
+                    self.updateDetail.stringValue = "You're on the latest version."
+                    self.updateDetail.textColor = .secondaryLabelColor
+                    self.updateButton.title = "Check"
+                default:
+                    self.pendingVersion = nil
+                    self.updateDetail.stringValue = "Couldn't reach GitHub. Check again later."
+                    self.updateDetail.textColor = .secondaryLabelColor
+                    self.updateButton.title = "Check"
+                }
+            }
+        }
+    }
+
+    @objc private func runUpdate() {
+        // Nothing newer is known yet, so this press is a re-check, not a pull.
+        guard pendingVersion != nil else {
+            updateDetail.stringValue = "Checking…"
+            updateDetail.textColor = .secondaryLabelColor
+            checkForUpdate()
+            return
+        }
+
+        updateButton.isEnabled = false
+        updateDetail.stringValue = "Updating…"
+        say("Pulling the latest and refreshing every agent…")
+
+        let script = repoRoot + "/bin/wilhelm-update"
+        let root = repoRoot
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let output = Self.capture(script, args: [], cwd: root)
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.updateButton.isEnabled = true
+                let lines = output.split(separator: "\n").map(String.init)
+                let refused = output.contains("Uncommitted changes")
+                self.say(refused
+                    ? "Update stopped: you have uncommitted changes in the repo."
+                    : (lines.last ?? "Updated."))
+                self.checkForUpdate()
+                self.refreshStatuses()
+                if !refused {
+                    // The panel is running the binary this update just replaced.
+                    self.updateDetail.stringValue = "Updated — quit and reopen to load it."
+                    self.updateDetail.textColor = .systemGreen
+                }
+            }
+        }
+    }
+
     private func makeStatusCard() -> NSView {
         statusCard = RoundedCardView()
         statusCard.fillColor = wilhelmAccent.withAlphaComponent(0.08)
@@ -784,17 +924,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let marketplace = isClaude
             ? ["plugin", "marketplace", "add", "./"]
             : ["plugin", "marketplace", "add", "."]
-        _ = capture(binary, args: marketplace, cwd: repoRoot)
+        _ = Self.capture(binary, args: marketplace, cwd: repoRoot)
 
         let add = isClaude
             ? ["plugin", "install", "wilhelm-alert@wilhelm-alert-marketplace"]
             : ["plugin", "add", "wilhelm-alert@wilhelm-alert-marketplace"]
-        var output = capture(binary, args: add, cwd: repoRoot)
+        var output = Self.capture(binary, args: add, cwd: repoRoot)
 
         // Already-installed copies are pinned by version, so a plain install
         // is a no-op after the first time; update is what refreshes the cache.
         if isClaude, output.contains("already installed") {
-            output = capture(binary, args: ["plugin", "update", "wilhelm-alert@wilhelm-alert-marketplace"], cwd: repoRoot)
+            output = Self.capture(binary, args: ["plugin", "update", "wilhelm-alert@wilhelm-alert-marketplace"], cwd: repoRoot)
         }
 
         // Codex reports the plugin as enabled but silently skips its hooks
@@ -926,13 +1066,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func which(_ tool: String) -> String? {
-        let output = capture("/bin/sh", args: ["-lc", "command -v \(tool)"], cwd: nil)
+        let output = Self.capture("/bin/sh", args: ["-lc", "command -v \(tool)"], cwd: nil)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return output.isEmpty ? nil : output
     }
 
     @discardableResult
-    private func capture(_ path: String, args: [String], cwd: String?) -> String {
+    // nonisolated + static so the updater can call it from a background queue
+    // without hopping back to the main actor for every line of output.
+    nonisolated private static func capture(_ path: String, args: [String], cwd: String?) -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = args
