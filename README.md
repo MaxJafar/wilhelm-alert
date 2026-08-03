@@ -141,6 +141,17 @@ codex plugin marketplace add https://github.com/MaxJafar/wilhelm-alert
 codex plugin add wilhelm-alert@wilhelm-alert-marketplace
 ```
 
+**Then start `codex` interactively once and approve the hook when it asks.**
+Codex won't run any plugin hook until you've reviewed it, and it doesn't
+warn you that it's skipping one — the plugin looks installed and enabled and
+simply never fires. `codex exec` can't prompt, so it always skips unreviewed
+hooks.
+
+Changing `hooks/hooks.json` invalidates that approval, because the trust is
+recorded as a hash of the hook — so a plugin update means approving again.
+For automation that already vets its plugins, `codex exec
+--dangerously-bypass-hook-trust` skips the gate.
+
 Working from a local clone instead? Point them at the folder — `claude
 plugin marketplace add ./` and `codex plugin marketplace add .`.
 
@@ -220,6 +231,12 @@ in your config — see [Setup](#setup).
 **It screams at the wrong times.** Check `pnpm log` first — if you see
 `SessionEnd` entries actually firing, you're on a version before 0.5.0 and
 the plugin copy still has the old hook. Bump and update.
+
+**Codex says installed and enabled, but never screams.** You haven't
+approved the hook. `codex plugin list` will happily report `installed,
+enabled` while Codex skips the hook entirely, and `pnpm log` stays empty
+because the script is never run. Start `codex` interactively and approve the
+hook review. See [Codex CLI](#codex-cli) above.
 
 **No overlay on macOS, just the scream.** The overlay is a tiny Swift
 program built on first use, so it needs Xcode command line tools

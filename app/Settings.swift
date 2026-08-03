@@ -728,6 +728,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
             output = capture(binary, args: ["plugin", "update", "wilhelm-alert@wilhelm-alert-marketplace"], cwd: repoRoot)
         }
 
+        // Codex reports the plugin as enabled but silently skips its hooks
+        // until they're approved in the TUI, so say so here rather than
+        // letting it look finished.
+        if !isClaude {
+            say("Installed. Now start `codex` in a terminal and approve the hook review — it won't fire until you do.")
+            return
+        }
+
         let firstLine = output
             .split(separator: "\n")
             .last { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
