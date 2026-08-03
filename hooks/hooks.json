@@ -5,7 +5,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wilhelm-alert",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/wilhelm-alert.js\"",
             "timeout": 10
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/wilhelm-alert",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/bin/wilhelm-alert.js\"",
             "timeout": 3
           }
         ]

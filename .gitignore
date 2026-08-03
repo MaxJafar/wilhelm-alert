@@ -1,3 +1,5 @@
 node_modules/
 sounds/*
 !sounds/README.md
+__pycache__/
+*.pyc

@@ -4,13 +4,12 @@ Copyright 2026 [your name here]
 Licensed under the Apache License, Version 2.0 (the "License").
 See the LICENSE file for the full license text.
 
-This project does not bundle any audio or images. The Wilhelm scream sound
-effect referenced in documentation and examples is a separately copyrighted
-sound effect and is not distributed with this software — see
-sounds/README.md.
+This project does not bundle the Wilhelm scream sound effect. The sound
+referenced in documentation and examples is separately copyrighted and is not
+distributed with this software — see sounds/README.md.
 
-Popup images are supplied by the user at runtime and are not distributed
-with this software. This project is not affiliated with, endorsed by, or
-sponsored by Anthropic, OpenAI, Google, or any other party whose name or
-marks may appear in user-supplied assets or in documentation describing
-compatibility. All trademarks are the property of their respective owners.
+The repository includes user-supplied parody popup images for local use. This
+project is not affiliated with, endorsed by, or sponsored by Anthropic, OpenAI,
+Google, or any other party whose name or marks may appear in bundled or
+user-supplied assets or in documentation describing compatibility. All
+trademarks are the property of their respective owners.

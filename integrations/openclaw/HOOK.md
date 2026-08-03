@@ -2,7 +2,7 @@
 name: wilhelm-alert
 description: "Plays an alert sound when a /stop command is issued"
 metadata:
-  { "openclaw": { "emoji": "🔊", "events": ["command:stop"], "requires": { "bins": ["afplay"] } } }
+  { "openclaw": { "emoji": "🔊", "events": ["command:stop"], "requires": { "bins": ["node"] } } }
 ---
 
 # wilhelm-alert

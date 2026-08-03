@@ -96,22 +96,34 @@ NSAnimationContext.runAnimationGroup { context in
 
 if mode == "turbo" {
     let origin = basePoint
-    let totalTicks = 34
-    var tick = 0
-    Timer.scheduledTimer(withTimeInterval: 0.026, repeats: true) { timer in
-        tick += 1
-        guard tick < totalTicks else {
+    let duration = 0.62
+    let frameRate = 1.0 / 60.0
+    var elapsed = 0.0
+
+    Timer.scheduledTimer(withTimeInterval: frameRate, repeats: true) { timer in
+        elapsed += frameRate
+        guard elapsed < duration else {
             timer.invalidate()
             panel.setFrameOrigin(origin)
+            panel.contentView?.layer?.setAffineTransform(.identity)
             return
         }
-        // Decay so it lands hard and settles, rather than buzzing flatly.
-        let decay = 1.0 - (Double(tick) / Double(totalTicks))
-        let amplitude = 30.0 * decay
-        panel.setFrameOrigin(NSPoint(
-            x: origin.x + CGFloat.random(in: -amplitude...amplitude),
-            y: origin.y + CGFloat.random(in: -amplitude...amplitude)
-        ))
+
+        // A driven oscillation, not random jitter: random offsets reads as a
+        // glitch, while a fast sine that decays reads as something being
+        // physically rattled. The axes use different frequencies so it never
+        // collapses into a clean diagonal.
+        let progress = elapsed / duration
+        let decay = pow(1.0 - progress, 1.7)
+        let amplitude = 34.0 * decay
+        let dx = amplitude * sin(elapsed * 58.0)
+        let dy = amplitude * 0.55 * sin(elapsed * 79.0 + 1.1)
+
+        panel.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
+
+        // A slight counter-rotation sells the impact more than travel alone.
+        let angle = CGFloat(0.035 * decay * sin(elapsed * 47.0))
+        panel.contentView?.layer?.setAffineTransform(CGAffineTransform(rotationAngle: angle))
     }
 }
 

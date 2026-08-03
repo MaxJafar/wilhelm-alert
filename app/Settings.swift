@@ -1,5 +1,5 @@
 // The wilhelm-alert mini app: pick a mode, hear it, install it.
-// A plain AppKit window — no browser, no localhost, no menu bar item.
+// A small AppKit control panel — no browser, no localhost, no menu bar item.
 //
 //   wilhelm-settings --root /path/to/wilhelm
 
@@ -13,15 +13,177 @@ let repoRoot: String = {
     return FileManager.default.currentDirectoryPath
 }()
 
+private let wilhelmAccent = NSColor(calibratedRed: 0.91, green: 0.31, blue: 0.18, alpha: 1)
+
+// MARK: - reusable views
+
+final class RoundedCardView: NSView {
+    var fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.72) {
+        didSet { needsDisplay = true }
+    }
+    var borderColor = NSColor.separatorColor.withAlphaComponent(0.55) {
+        didSet { needsDisplay = true }
+    }
+    var borderWidth: CGFloat = 1 {
+        didSet { needsDisplay = true }
+    }
+    var cornerRadius: CGFloat = 18 {
+        didSet { needsDisplay = true }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
+        let path = NSBezierPath(
+            roundedRect: rect,
+            xRadius: cornerRadius,
+            yRadius: cornerRadius
+        )
+        fillColor.setFill()
+        path.fill()
+
+        guard borderWidth > 0 else { return }
+        borderColor.setStroke()
+        path.lineWidth = borderWidth
+        path.stroke()
+    }
+}
+
+final class ModeCardView: NSView {
+    let modeIdentifier: String
+    var onSelect: (() -> Void)?
+    var isSelected = false {
+        didSet {
+            updateAppearance()
+            needsDisplay = true
+        }
+    }
+
+    private let titleLabel: NSTextField
+    private let detailLabel: NSTextField
+    private let badgeLabel: NSTextField
+    private let clickTarget = NSButton()
+
+    init(identifier: String, title: String, detail: String, badge: String) {
+        self.modeIdentifier = identifier
+        self.titleLabel = NSTextField(labelWithString: title)
+        self.detailLabel = NSTextField(labelWithString: detail)
+        self.badgeLabel = NSTextField(labelWithString: badge.uppercased())
+        super.init(frame: .zero)
+
+        wantsLayer = true
+
+        titleLabel.font = .systemFont(ofSize: 13, weight: .semibold)
+        detailLabel.font = .systemFont(ofSize: 11)
+        detailLabel.textColor = .secondaryLabelColor
+        detailLabel.lineBreakMode = .byTruncatingTail
+        badgeLabel.font = .monospacedSystemFont(ofSize: 9, weight: .semibold)
+        badgeLabel.alignment = .right
+
+        for view in [titleLabel, detailLabel, badgeLabel] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            addSubview(view)
+        }
+
+        clickTarget.title = ""
+        clickTarget.isBordered = false
+        clickTarget.isTransparent = true
+        clickTarget.focusRingType = .none
+        clickTarget.setButtonType(.momentaryPushIn)
+        clickTarget.target = self
+        clickTarget.action = #selector(pressed)
+        clickTarget.toolTip = title
+        addSubview(clickTarget)
+
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 48),
+            titleLabel.topAnchor.constraint(equalTo: topAnchor, constant: 14),
+            titleLabel.trailingAnchor.constraint(equalTo: badgeLabel.leadingAnchor, constant: -10),
+
+            detailLabel.leadingAnchor.constraint(equalTo: titleLabel.leadingAnchor),
+            detailLabel.topAnchor.constraint(equalTo: titleLabel.bottomAnchor, constant: 3),
+            detailLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -18),
+
+            badgeLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
+            badgeLabel.centerYAnchor.constraint(equalTo: titleLabel.centerYAnchor),
+            badgeLabel.widthAnchor.constraint(greaterThanOrEqualToConstant: 54),
+        ])
+
+        updateAppearance()
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layout() {
+        super.layout()
+        clickTarget.frame = bounds
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rect = bounds.insetBy(dx: 0.5, dy: 0.5)
+        let path = NSBezierPath(roundedRect: rect, xRadius: 16, yRadius: 16)
+        let fill = isSelected
+            ? wilhelmAccent.withAlphaComponent(0.12)
+            : NSColor.controlBackgroundColor.withAlphaComponent(0.58)
+        let stroke = isSelected
+            ? wilhelmAccent.withAlphaComponent(0.72)
+            : NSColor.separatorColor.withAlphaComponent(0.48)
+        fill.setFill()
+        path.fill()
+        stroke.setStroke()
+        path.lineWidth = isSelected ? 1.5 : 1
+        path.stroke()
+
+        let indicatorRect = NSRect(x: 18, y: bounds.midY - 8, width: 16, height: 16)
+        let indicator = NSBezierPath(ovalIn: indicatorRect)
+        if isSelected {
+            wilhelmAccent.setFill()
+            indicator.fill()
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: indicatorRect.insetBy(dx: 5, dy: 5)).fill()
+        } else {
+            NSColor.clear.setFill()
+            indicator.fill()
+            NSColor.separatorColor.setStroke()
+            indicator.lineWidth = 1.2
+            indicator.stroke()
+        }
+    }
+
+    @objc private func pressed() {
+        onSelect?()
+    }
+
+    private func updateAppearance() {
+        titleLabel.textColor = isSelected ? wilhelmAccent : .labelColor
+        badgeLabel.textColor = isSelected ? wilhelmAccent : .secondaryLabelColor
+        clickTarget.setAccessibilityValue(isSelected ? "Selected" : "Not selected")
+    }
+}
+
+// MARK: - settings controller
+
 @MainActor
 final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow!
     private var status: NSTextField!
-    private var buttons: [NSButton] = []
+    private var modeCards: [ModeCardView] = []
+    private var statusCard: RoundedCardView!
+
     private let modes = [
-        ("light", "Light", "Just the scream."),
-        ("middle", "Middle", "The scream, plus the model screaming at you."),
-        ("turbo", "Turbo", "All that, and the overlay shakes itself apart."),
+        ("light", "Light", "Just the scream.", "QUIET"),
+        ("middle", "Middle", "The scream, plus the model screaming back.", "POPULAR"),
+        ("turbo", "Turbo", "The popup shakes itself apart.", "CHAOTIC"),
     ]
 
     private var configURL: URL {
@@ -30,113 +192,473 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private var selectedMode: String {
-        for (index, button) in buttons.enumerated() where button.state == .on {
-            return modes[index].0
-        }
-        return "light"
+        modeCards.first(where: { $0.isSelected })?.modeIdentifier ?? "light"
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let width: CGFloat = 460
-        let height: CGFloat = 500
+        let width: CGFloat = 620
+        let height: CGFloat = 860
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
-            styleMask: [.titled, .closable, .miniaturizable],
+            styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "wilhelm-alert"
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.isMovableByWindowBackground = true
+        window.backgroundColor = .clear
+        window.minSize = NSSize(width: 560, height: 740)
         window.delegate = self
         window.center()
 
-        let root = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        var y = height - 60
+        let background = NSVisualEffectView()
+        background.translatesAutoresizingMaskIntoConstraints = false
+        background.material = .underWindowBackground
+        background.blendingMode = .behindWindow
+        background.state = .active
+        window.contentView = background
 
-        let heading = label("When your agent finishes, it screams.", size: 17, bold: true)
-        heading.frame = NSRect(x: 28, y: y, width: width - 56, height: 24)
-        root.addSubview(heading)
-        y -= 34
+        let content = NSView()
+        content.translatesAutoresizingMaskIntoConstraints = false
+        background.addSubview(content)
+        NSLayoutConstraint.activate([
+            content.leadingAnchor.constraint(equalTo: background.leadingAnchor, constant: 30),
+            content.trailingAnchor.constraint(equalTo: background.trailingAnchor, constant: -30),
+            content.topAnchor.constraint(equalTo: background.topAnchor, constant: 28),
+            content.bottomAnchor.constraint(equalTo: background.bottomAnchor, constant: -22),
+        ])
 
-        let sub = label("Pick how loudly.", size: 12, secondary: true)
-        sub.frame = NSRect(x: 28, y: y, width: width - 56, height: 18)
-        root.addSubview(sub)
-        y -= 34
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 13
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        content.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: content.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: content.trailingAnchor),
+            stack.topAnchor.constraint(equalTo: content.topAnchor),
+            stack.bottomAnchor.constraint(lessThanOrEqualTo: content.bottomAnchor),
+        ])
 
-        let current = readConfiguredMode()
-        for (identifier, title, blurb) in modes {
-            let button = NSButton(radioButtonWithTitle: title, target: self, action: #selector(modeChanged))
-            button.frame = NSRect(x: 28, y: y, width: width - 56, height: 20)
-            button.font = .systemFont(ofSize: 13, weight: .medium)
-            button.state = (identifier == current) ? .on : .off
-            root.addSubview(button)
-            buttons.append(button)
-            y -= 20
+        addFullWidth(makeHeader(), to: stack)
+        addFullWidth(makeFacesSection(), to: stack)
+        addFullWidth(makeModesSection(), to: stack)
+        addFullWidth(makeTestRow(), to: stack)
+        addFullWidth(makeSeparator(), to: stack)
+        addFullWidth(makeInstallSection(), to: stack)
+        addFullWidth(makeStatusCard(), to: stack)
 
-            let detail = label(blurb, size: 11, secondary: true)
-            detail.frame = NSRect(x: 47, y: y, width: width - 75, height: 16)
-            root.addSubview(detail)
-            y -= 26
-        }
-
-        y -= 6
-        let test = NSButton(title: "Test it", target: self, action: #selector(testAlert))
-        test.frame = NSRect(x: 28, y: y, width: 110, height: 30)
-        test.bezelStyle = .rounded
-        test.keyEquivalent = "\r"
-        root.addSubview(test)
-        y -= 46
-
-        let line = NSBox(frame: NSRect(x: 28, y: y, width: width - 56, height: 1))
-        line.boxType = .separator
-        root.addSubview(line)
-        y -= 30
-
-        let installHeading = label("Install into", size: 13, bold: true)
-        installHeading.frame = NSRect(x: 28, y: y, width: width - 56, height: 20)
-        root.addSubview(installHeading)
-        y -= 34
-
-        for (title, tag) in [("Claude Code", 0), ("Codex", 1)] {
-            let name = label(title, size: 12)
-            name.frame = NSRect(x: 28, y: y + 6, width: 160, height: 18)
-            root.addSubview(name)
-
-            let install = NSButton(title: "Install / Update", target: self, action: #selector(installAgent(_:)))
-            install.frame = NSRect(x: width - 190, y: y, width: 162, height: 30)
-            install.bezelStyle = .rounded
-            install.tag = tag
-            root.addSubview(install)
-            y -= 40
-        }
-
-        status = label("", size: 11, secondary: true)
-        status.frame = NSRect(x: 28, y: 20, width: width - 56, height: 34)
-        status.maximumNumberOfLines = 2
-        root.addSubview(status)
-
-        window.contentView = root
         window.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         if !FileManager.default.fileExists(atPath: repoRoot + "/sounds") {
-            say("Warning: no sounds folder at \(repoRoot)")
+            say("Warning: no sounds folder at " + repoRoot)
         }
+    }
+
+    // MARK: - view construction
+
+    private func makeHeader() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+        container.heightAnchor.constraint(equalToConstant: 68).isActive = true
+
+        let iconCard = RoundedCardView()
+        iconCard.fillColor = wilhelmAccent.withAlphaComponent(0.13)
+        iconCard.borderColor = wilhelmAccent.withAlphaComponent(0.3)
+        iconCard.cornerRadius = 14
+        iconCard.translatesAutoresizingMaskIntoConstraints = false
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: "speaker.wave.3.fill", accessibilityDescription: "Alert") ?? NSImage())
+        icon.translatesAutoresizingMaskIntoConstraints = false
+        icon.contentTintColor = wilhelmAccent
+        icon.imageScaling = .scaleProportionallyUpOrDown
+        iconCard.addSubview(icon)
+        NSLayoutConstraint.activate([
+            iconCard.widthAnchor.constraint(equalToConstant: 46),
+            iconCard.heightAnchor.constraint(equalToConstant: 46),
+            icon.leadingAnchor.constraint(equalTo: iconCard.leadingAnchor, constant: 12),
+            icon.trailingAnchor.constraint(equalTo: iconCard.trailingAnchor, constant: -12),
+            icon.topAnchor.constraint(equalTo: iconCard.topAnchor, constant: 12),
+            icon.bottomAnchor.constraint(equalTo: iconCard.bottomAnchor, constant: -12),
+        ])
+
+        let eyebrow = label("WILHELM ALERT", size: 10, bold: true)
+        eyebrow.textColor = wilhelmAccent
+        let heading = label("When your agent finishes, it screams.", size: 22, bold: true)
+        let subheading = label("A tiny completion ritual for Claude Code and Codex.", size: 12, secondary: true)
+        let copy = NSStackView(views: [eyebrow, heading, subheading])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 4
+        copy.translatesAutoresizingMaskIntoConstraints = false
+
+        let ready = label("READY", size: 10, bold: true)
+        ready.textColor = NSColor.systemGreen
+        ready.alignment = .center
+        ready.wantsLayer = true
+        ready.layer?.backgroundColor = NSColor.systemGreen.withAlphaComponent(0.12).cgColor
+        ready.layer?.cornerRadius = 9
+        ready.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSStackView(views: [iconCard, copy, ready])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 14
+        row.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            row.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            row.topAnchor.constraint(equalTo: container.topAnchor),
+            row.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ready.widthAnchor.constraint(equalToConstant: 58),
+            ready.heightAnchor.constraint(equalToConstant: 22),
+            copy.trailingAnchor.constraint(lessThanOrEqualTo: ready.leadingAnchor, constant: -8),
+        ])
+        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return container
+    }
+
+    private func makeFacesSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 9
+
+        section.addArrangedSubview(makeSectionHeader(
+            title: "The cast",
+            subtitle: "Your custom screamers are loaded and ready to pop up."
+        ))
+
+        let faces = NSStackView(views: [
+            makeFaceCard(source: "codex", title: "Codex", detail: "OpenAI completion"),
+            makeFaceCard(source: "claude", title: "Claude Code", detail: "Anthropic completion"),
+        ])
+        faces.orientation = .horizontal
+        faces.alignment = .height
+        faces.distribution = .fillEqually
+        faces.spacing = 12
+        faces.heightAnchor.constraint(equalToConstant: 118).isActive = true
+        faces.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        section.addArrangedSubview(faces)
+        return section
+    }
+
+    private func makeFaceCard(source: String, title: String, detail: String) -> NSView {
+        let card = RoundedCardView()
+        card.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.64)
+        card.cornerRadius = 17
+
+        let imageShell = RoundedCardView()
+        imageShell.fillColor = source == "claude" ? NSColor.black : NSColor.white
+        imageShell.borderColor = NSColor.separatorColor.withAlphaComponent(0.35)
+        imageShell.cornerRadius = 13
+        imageShell.translatesAutoresizingMaskIntoConstraints = false
+
+        let imageView = NSImageView()
+        let faceImage = NSImage(contentsOfFile: repoRoot + "/assets/scream-" + source + ".png")
+        imageView.image = faceImage
+        imageView.imageScaling = .scaleAxesIndependently
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 11
+        imageView.layer?.masksToBounds = true
+        imageShell.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageShell.widthAnchor.constraint(equalToConstant: 82),
+            imageShell.heightAnchor.constraint(equalToConstant: 82),
+            imageView.leadingAnchor.constraint(equalTo: imageShell.leadingAnchor, constant: 5),
+            imageView.trailingAnchor.constraint(equalTo: imageShell.trailingAnchor, constant: -5),
+            imageView.topAnchor.constraint(equalTo: imageShell.topAnchor, constant: 5),
+            imageView.bottomAnchor.constraint(equalTo: imageShell.bottomAnchor, constant: -5),
+        ])
+
+        let name = label(title, size: 14, bold: true)
+        let description = label(detail, size: 11, secondary: true)
+        let loaded = label(faceImage == nil ? "○  IMAGE MISSING" : "●  IMAGE LOADED", size: 9, bold: true)
+        loaded.textColor = faceImage == nil ? NSColor.systemRed : NSColor.systemGreen
+        let copy = NSStackView(views: [name, description, loaded])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 5
+        copy.translatesAutoresizingMaskIntoConstraints = false
+
+        let row = NSStackView(views: [imageShell, copy])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 14
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 14),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -14),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 18),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -18),
+        ])
+        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return card
+    }
+
+    private func makeModesSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 7
+        section.addArrangedSubview(makeSectionHeader(
+            title: "Choose your volume",
+            subtitle: "How much chaos should follow a finished task?"
+        ))
+
+        let cards = NSView()
+        cards.translatesAutoresizingMaskIntoConstraints = false
+        cards.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        cards.heightAnchor.constraint(equalToConstant: 182).isActive = true
+
+        let current = readConfiguredMode()
+        var previousCard: ModeCardView?
+        for (index, mode) in modes.enumerated() {
+            let (identifier, title, detail, badge) = mode
+            let card = ModeCardView(identifier: identifier, title: title, detail: detail, badge: badge)
+            card.isSelected = identifier == current
+            card.onSelect = { [weak self, weak card] in
+                guard let card else { return }
+                self?.selectMode(card)
+            }
+            card.translatesAutoresizingMaskIntoConstraints = false
+            modeCards.append(card)
+            cards.addSubview(card)
+            var constraints = [
+                card.leadingAnchor.constraint(equalTo: cards.leadingAnchor),
+                card.trailingAnchor.constraint(equalTo: cards.trailingAnchor),
+                card.heightAnchor.constraint(equalToConstant: 56),
+            ]
+            if let previousCard {
+                constraints.append(card.topAnchor.constraint(equalTo: previousCard.bottomAnchor, constant: 7))
+            } else {
+                constraints.append(card.topAnchor.constraint(equalTo: cards.topAnchor))
+            }
+            if index == modes.count - 1 {
+                constraints.append(card.bottomAnchor.constraint(equalTo: cards.bottomAnchor))
+            }
+            NSLayoutConstraint.activate(constraints)
+            previousCard = card
+        }
+        section.addArrangedSubview(cards)
+        return section
+    }
+
+    private func makeTestRow() -> NSView {
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+
+        let test = NSButton(title: "Test the alert", target: self, action: #selector(testAlert))
+        test.bezelStyle = .rounded
+        test.controlSize = .large
+        test.font = .systemFont(ofSize: 13, weight: .semibold)
+        test.contentTintColor = .white
+        test.bezelColor = wilhelmAccent
+        test.keyEquivalent = "\r"
+        test.toolTip = "Play the sound and show the selected face"
+        test.setContentHuggingPriority(.required, for: .horizontal)
+
+        let hint = label("Saved automatically to your alert config.", size: 11, secondary: true)
+        hint.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        row.addArrangedSubview(test)
+        row.addArrangedSubview(hint)
+        row.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        return row
+    }
+
+    private func makeSeparator() -> NSView {
+        let separator = NSBox()
+        separator.boxType = .separator
+        separator.heightAnchor.constraint(equalToConstant: 1).isActive = true
+        return separator
+    }
+
+    private func makeInstallSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 7
+        section.addArrangedSubview(makeSectionHeader(
+            title: "Install into your agents",
+            subtitle: "Keep both completion hooks one click away."
+        ))
+        let claudeRow = makeAgentRow(
+            source: "claude",
+            title: "Claude Code",
+            detail: "Install or refresh the Claude plugin.",
+            tag: 0
+        )
+        let codexRow = makeAgentRow(
+            source: "codex",
+            title: "Codex",
+            detail: "Install or refresh the Codex plugin.",
+            tag: 1
+        )
+        let cursorRow = makeAgentRow(
+            source: "cursor",
+            title: "Cursor",
+            detail: "Add the stop hook to ~/.cursor/hooks.json.",
+            tag: 2
+        )
+        claudeRow.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        codexRow.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        cursorRow.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        section.addArrangedSubview(claudeRow)
+        section.addArrangedSubview(codexRow)
+        section.addArrangedSubview(cursorRow)
+        return section
+    }
+
+    private func makeAgentRow(source: String, title: String, detail: String, tag: Int) -> NSView {
+        let card = RoundedCardView()
+        card.fillColor = NSColor.controlBackgroundColor.withAlphaComponent(0.58)
+        card.cornerRadius = 15
+        card.heightAnchor.constraint(equalToConstant: 68).isActive = true
+
+        let imageShell = RoundedCardView()
+        let faceImage = NSImage(contentsOfFile: repoRoot + "/assets/scream-" + source + ".png")
+        // Agents without their own face (Cursor, say) would otherwise render
+        // as an empty white square that reads as a broken image.
+        imageShell.fillColor = faceImage == nil
+            ? NSColor.controlBackgroundColor
+            : (source == "claude" ? NSColor.black : NSColor.white)
+        imageShell.borderColor = NSColor.separatorColor.withAlphaComponent(0.3)
+        imageShell.cornerRadius = 10
+        imageShell.translatesAutoresizingMaskIntoConstraints = false
+        let imageView = NSImageView()
+        imageView.image = faceImage ?? NSImage(
+            systemSymbolName: "questionmark",
+            accessibilityDescription: "no face yet"
+        )
+        imageView.contentTintColor = .tertiaryLabelColor
+        imageView.imageScaling = faceImage == nil ? .scaleProportionallyDown : .scaleAxesIndependently
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.wantsLayer = true
+        imageView.layer?.cornerRadius = 8
+        imageView.layer?.masksToBounds = true
+        imageShell.addSubview(imageView)
+        NSLayoutConstraint.activate([
+            imageShell.widthAnchor.constraint(equalToConstant: 46),
+            imageShell.heightAnchor.constraint(equalToConstant: 46),
+            imageView.leadingAnchor.constraint(equalTo: imageShell.leadingAnchor, constant: 3),
+            imageView.trailingAnchor.constraint(equalTo: imageShell.trailingAnchor, constant: -3),
+            imageView.topAnchor.constraint(equalTo: imageShell.topAnchor, constant: 3),
+            imageView.bottomAnchor.constraint(equalTo: imageShell.bottomAnchor, constant: -3),
+        ])
+
+        let name = label(title, size: 13, bold: true)
+        let description = label(detail, size: 11, secondary: true)
+        let copy = NSStackView(views: [name, description])
+        copy.orientation = .vertical
+        copy.alignment = .leading
+        copy.spacing = 3
+        copy.translatesAutoresizingMaskIntoConstraints = false
+        copy.setContentHuggingPriority(.defaultLow, for: .horizontal)
+
+        let install = NSButton(title: "Install / Update", target: self, action: #selector(installAgent(_:)))
+        install.bezelStyle = .rounded
+        install.controlSize = .regular
+        install.font = .systemFont(ofSize: 11, weight: .semibold)
+        install.tag = tag
+        install.setContentHuggingPriority(.required, for: .horizontal)
+
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let row = NSStackView(views: [imageShell, copy, spacer, install])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+        row.translatesAutoresizingMaskIntoConstraints = false
+        card.addSubview(row)
+        NSLayoutConstraint.activate([
+            row.leadingAnchor.constraint(equalTo: card.leadingAnchor, constant: 12),
+            row.trailingAnchor.constraint(equalTo: card.trailingAnchor, constant: -12),
+            row.topAnchor.constraint(equalTo: card.topAnchor, constant: 11),
+            row.bottomAnchor.constraint(equalTo: card.bottomAnchor, constant: -11),
+        ])
+        return card
+    }
+
+    private func makeStatusCard() -> NSView {
+        statusCard = RoundedCardView()
+        statusCard.fillColor = wilhelmAccent.withAlphaComponent(0.08)
+        statusCard.borderColor = wilhelmAccent.withAlphaComponent(0.22)
+        statusCard.cornerRadius = 14
+        statusCard.heightAnchor.constraint(equalToConstant: 38).isActive = true
+
+        let icon = NSImageView(image: NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: "Status") ?? NSImage())
+        icon.contentTintColor = wilhelmAccent
+        icon.translatesAutoresizingMaskIntoConstraints = false
+
+        status = label("Ready. Pick a mode, then test the ritual.", size: 11, secondary: true)
+        status.maximumNumberOfLines = 2
+        status.lineBreakMode = .byTruncatingTail
+        status.translatesAutoresizingMaskIntoConstraints = false
+        status.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let row = NSStackView(views: [icon, status])
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 8
+        row.translatesAutoresizingMaskIntoConstraints = false
+        statusCard.addSubview(row)
+        NSLayoutConstraint.activate([
+            icon.widthAnchor.constraint(equalToConstant: 17),
+            icon.heightAnchor.constraint(equalToConstant: 17),
+            row.leadingAnchor.constraint(equalTo: statusCard.leadingAnchor, constant: 13),
+            row.trailingAnchor.constraint(equalTo: statusCard.trailingAnchor, constant: -13),
+            row.topAnchor.constraint(equalTo: statusCard.topAnchor, constant: 8),
+            row.bottomAnchor.constraint(equalTo: statusCard.bottomAnchor, constant: -8),
+        ])
+        return statusCard
+    }
+
+    private func makeSectionHeader(title: String, subtitle: String) -> NSView {
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 3
+        stack.addArrangedSubview(label(title, size: 14, bold: true))
+        stack.addArrangedSubview(label(subtitle, size: 11, secondary: true))
+        return stack
+    }
+
+    private func addFullWidth(_ view: NSView, to stack: NSStackView) {
+        stack.addArrangedSubview(view)
+        view.widthAnchor.constraint(equalToConstant: 560).isActive = true
     }
 
     // MARK: - actions
 
-    @objc private func modeChanged(_ sender: NSButton) {
-        for button in buttons where button !== sender { button.state = .off }
+    private func selectMode(_ selected: ModeCardView) {
+        for card in modeCards {
+            card.isSelected = card === selected
+        }
         writeConfiguredMode(selectedMode)
-        say("Mode set to \(selectedMode). Saved to ~/.config/wilhelm-alert/config")
+        say("Mode set to \(selectedMode). Ready when your agent is.")
     }
 
     @objc private func testAlert() {
         run(repoRoot + "/bin/wilhelm-alert", args: [], env: ["WILHELM_ALERT_MODE": selectedMode])
-        say("Testing \(selectedMode)…")
+        say("Testing \(selectedMode)… Look alive.")
     }
 
     @objc private func installAgent(_ sender: NSButton) {
+        if sender.tag == 2 {
+            installCursor()
+            return
+        }
         let isClaude = sender.tag == 0
         let tool = isClaude ? "claude" : "codex"
         guard let binary = which(tool) else {
@@ -168,18 +690,61 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         say(firstLine.trimmingCharacters(in: .whitespaces))
     }
 
+    // Cursor has no plugin CLI, so this edits ~/.cursor/hooks.json directly —
+    // merging into whatever is already there rather than replacing it, since
+    // that file is very likely to hold hooks the user cares about.
+    private func installCursor() {
+        let hooksURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cursor/hooks.json")
+        let command = "node \"\(repoRoot)/bin/wilhelm-alert.js\" --source cursor"
+
+        var root: [String: Any] = ["version": 1]
+        if let data = try? Data(contentsOf: hooksURL),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            root = existing
+            if root["version"] == nil { root["version"] = 1 }
+        }
+
+        var hooks = root["hooks"] as? [String: Any] ?? [:]
+        var stopHooks = hooks["stop"] as? [[String: Any]] ?? []
+        stopHooks.removeAll { ($0["command"] as? String)?.contains("wilhelm-alert") == true }
+        stopHooks.append(["command": command])
+        hooks["stop"] = stopHooks
+        root["hooks"] = hooks
+
+        do {
+            try FileManager.default.createDirectory(
+                at: hooksURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+            let data = try JSONSerialization.data(
+                withJSONObject: root,
+                options: [.prettyPrinted, .withoutEscapingSlashes]
+            )
+            try data.write(to: hooksURL, options: .atomic)
+            say("Added the stop hook to ~/.cursor/hooks.json — restart Cursor.")
+        } catch {
+            say("Couldn't write ~/.cursor/hooks.json: \(error.localizedDescription)")
+        }
+    }
+
     func windowWillClose(_ notification: Notification) {
         NSApp.terminate(nil)
     }
 
     // MARK: - helpers
 
-    private func say(_ text: String) { status.stringValue = text }
+    private func say(_ text: String) {
+        status?.stringValue = text
+    }
 
     private func label(_ text: String, size: CGFloat, bold: Bool = false, secondary: Bool = false) -> NSTextField {
         let field = NSTextField(labelWithString: text)
-        field.font = bold ? .systemFont(ofSize: size, weight: .semibold) : .systemFont(ofSize: size)
+        field.font = bold
+            ? .systemFont(ofSize: size, weight: .semibold)
+            : .systemFont(ofSize: size)
         if secondary { field.textColor = .secondaryLabelColor }
+        field.lineBreakMode = .byTruncatingTail
         return field
     }
 

@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "stop": [
+      {
+        "type": "command",
+        "command": "node \"/ABSOLUTE/PATH/TO/wilhelm/bin/wilhelm-alert.js\" --source cursor"
+      }
+    ]
+  }
+}

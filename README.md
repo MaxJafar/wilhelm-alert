@@ -1,13 +1,30 @@
 # wilhelm-alert
 
+![Wilhelm Scream — task complete](assets/wilhelm-scream-banner.png)
+
 Your agent finishes a task. It screams. You look up.
 
 That's it. That's the plugin.
 
 It's the [Wilhelm scream](https://en.wikipedia.org/wiki/Wilhelm_scream) —
 the stock sound effect that's been in a few hundred movies — fired from
-your coding agent's "task complete" hook. Works with Claude Code and Codex
-as a real installable plugin, plus hook config for Antigravity and OpenClaw.
+your coding agent's "task complete" hook.
+
+**Agents:** Claude Code and Codex install as real plugins. Cursor,
+Antigravity, and OpenClaw wire up by hand — see
+[Install it into your agent](#install-it-into-your-agent).
+
+**Platforms:**
+
+| | Sound | Overlay | Shake | Mini app |
+| --- | --- | --- | --- | --- |
+| macOS | ✅ | ✅ | ✅ | ✅ |
+| Windows | ✅ | ✅ | ✅ | ❌ edit the config file |
+| Linux | ✅ | ⚠️ needs python3-tk | ⚠️ same | ❌ edit the config file |
+
+The core is Node, so all three behave the same. The overlay is native per
+platform: Swift on macOS, WPF on Windows, Tk on Linux. Only macOS gets the
+mini app.
 
 ## Modes
 
@@ -48,15 +65,15 @@ run inside the *agent's* environment, so a variable you set in your terminal
 usually never reaches them. `WILHELM_ALERT_MODE` still overrides everything
 for one-off tests.
 
-Either way, feed it two things it doesn't ship with:
+Either way, add a sound file if you want the full effect:
 
 **A scream.** Drop `sounds/wilhelm-scream.mp3` (`.wav`/`.aiff` fine too), or
 point `WILHELM_ALERT_SOUND` at any audio file. The real Wilhelm scream is a
 copyrighted sound effect, so you bring your own — see
 [sounds/README.md](sounds/README.md).
 
-**Faces**, if you want `middle` or `turbo`. Copy an image to your clipboard
-and run:
+The repository includes default Codex and Claude faces for `middle` and
+`turbo`. To replace one, copy an image to your clipboard and run:
 
 ```bash
 ./bin/wilhelm-face claude    # then again with: codex
@@ -99,12 +116,20 @@ Both hook `Stop` (and `SessionEnd` on Codex) via
 [hooks/hooks.json](hooks/hooks.json). One hook file serves both, because
 Codex helpfully sets `CLAUDE_PLUGIN_ROOT` for plugin compatibility.
 
+### Cursor
+
+`pnpm setup` has a button for this, which merges into your existing
+`~/.cursor/hooks.json` rather than overwriting it. By hand, see
+[integrations/cursor/](integrations/cursor/README.md). Hook the `stop`
+event, not `afterAgentResponse` — the latter fires after every assistant
+message, so a long task screams at you repeatedly.
+
 ### Antigravity
 
 No plugin format to hook into yet, so do it by hand: drop
 [integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
-into `.agents/` in your workspace or `~/.gemini/config/`, with the path to
-`bin/wilhelm-alert` filled in.
+into `.agents/` in your workspace or `~/.gemini/config/`, with the path
+filled in.
 
 ### OpenClaw
 
@@ -121,14 +146,20 @@ repo and didn't bump + update the plugin. See the note above.
 
 **Nothing happens at all.** You didn't add a sound file. See above.
 
-**No overlay, just the scream.** The overlay is a tiny Swift program built
-on first use, so it needs Xcode command line tools (`xcode-select --install`).
-Without them it falls back to a plain Quick Look panel, and turbo loses its
-shake. First build takes ~2s and is then cached in `~/.cache/wilhelm-alert`.
+**No overlay on macOS, just the scream.** The overlay is a tiny Swift
+program built on first use, so it needs Xcode command line tools
+(`xcode-select --install`). First build takes ~2s, then it's cached in
+`~/.cache/wilhelm-alert`.
 
-**Linux:** sound works (`paplay`/`aplay`/`ffplay`), popup opens via
-`xdg-open` but won't auto-close, no overlay or shake, and no mini app —
-edit the config file directly. **Windows:** no.
+**No overlay on Linux.** Tk isn't installed. `sudo apt install python3-tk`
+(or your distro's equivalent), and `pip install Pillow` if your face is a
+PNG — bare Tk only reads GIF.
+
+**The popup shows the wrong agent's face.** Claude Code and Codex are
+detected automatically; everything else has to announce itself with
+`--source cursor` in the hook command. Without a matching
+`assets/scream-<source>.png` it falls back to whatever face it can find,
+which is deliberately not "nothing at all".
 
 The turbo shake used to need Accessibility permission, back when it rattled
 a Quick Look window that belonged to someone else. The overlay owns its own
@@ -139,13 +170,13 @@ agent's hook chain is no longer a joke, it's a bug report.
 
 ## Trademarks, since this is public
 
-The popup images are yours to supply, and the fun ones are inevitably going
-to be somebody's logo with a mouth drawn on it. That's parody, and parody of
-a logo is not the same as a license to use it — this project doesn't claim
-any rights to Anthropic's, OpenAI's, or anyone else's marks, isn't affiliated
-with or endorsed by them, and ships no such images itself. Draw what you
-like on your own machine; think twice before committing it to a public repo
-with someone's brand on it.
+The popup images are parody artwork, and the fun ones are inevitably going to
+be somebody's logo with a mouth drawn on it. That's parody, and parody of a
+logo is not the same as a license to use it — this project doesn't claim any
+rights to Anthropic's, OpenAI's, or anyone else's marks, isn't affiliated with
+or endorsed by them, and ships no official brand assets. Draw what you like on
+your own machine; think twice before committing it to a public repo with
+someone's brand on it.
 
 ## License
 

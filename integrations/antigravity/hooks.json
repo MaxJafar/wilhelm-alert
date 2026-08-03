@@ -3,7 +3,7 @@
     "Stop": [
       {
         "type": "command",
-        "command": "/ABSOLUTE/PATH/TO/wilhelm/bin/wilhelm-alert",
+        "command": "node \"/ABSOLUTE/PATH/TO/wilhelm/bin/wilhelm-alert.js\" --source antigravity",
         "timeout": 10
       }
     ]
