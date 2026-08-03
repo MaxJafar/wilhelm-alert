@@ -217,6 +217,14 @@ The update check is a plain GET of this repo's `package.json` on GitHub. It
 sends nothing about you, and everything still works offline — the button just
 says it couldn't reach GitHub.
 
+Coming from a version older than 0.7.0? The updater didn't exist yet, so
+there's no button to press. Pull once by hand and it's self-updating from
+then on:
+
+```bash
+git pull && pnpm install && pnpm app
+```
+
 ## Why did it just scream?
 
 Every hook run is logged — the ones that screamed and the ones that were

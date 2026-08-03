@@ -1,6 +1,6 @@
 {
   "name": "wilhelm-alert",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Plays an alert sound when your coding agent (Claude Code, Codex, Antigravity, OpenClaw) finishes a task",
   "license": "Apache-2.0",
   "author": "MaxJafar",
