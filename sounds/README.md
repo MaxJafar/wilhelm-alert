@@ -5,7 +5,8 @@ Put your alert sound here as `wilhelm-scream.mp3` (or `.wav` / `.aiff`) and
 repo — the actual Wilhelm scream recording is a copyrighted sound effect, so
 it isn't included/redistributed here. Options:
 
-- Supply your own copy of the file under this name.
+- Supply your own copy of the file under this name. [BigSoundBank](https://bigsoundbank.com/wilhelm-scream-s0477.html)
+  hosts a free download (check their license terms yourself).
 - Point `WILHELM_ALERT_SOUND` at any sound file you already have, anywhere
   on disk (skip this folder entirely).
 - Use any other short alert sound instead — the script doesn't care what it
