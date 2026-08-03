@@ -18,7 +18,19 @@ root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 sounds_dir="$root_dir/sounds"
 assets_dir="$root_dir/assets"
 
-mode="${WILHELM_ALERT_MODE:-light}"
+config_file="${XDG_CONFIG_HOME:-$HOME/.config}/wilhelm-alert/config"
+
+# Mode comes from the config file, not just the environment: an agent's hook
+# runs in the agent's process environment, so an export in your shell profile
+# would never reach us. The env var still wins for one-off testing.
+read_config() {
+  local key="$1"
+  [ -f "$config_file" ] || return 0
+  sed -n "s/^${key}=//p" "$config_file" | tail -1 | tr -d '[:space:]'
+}
+
+mode="${WILHELM_ALERT_MODE:-$(read_config mode)}"
+mode="${mode:-light}"
 case "$mode" in
   light|middle|turbo) ;;
   *)
@@ -77,40 +89,23 @@ play_sound() {
   esac
 }
 
-# Rattles the Quick Look panel. Needs Accessibility permission for whatever
-# runs this (System Settings > Privacy & Security > Accessibility). Without
-# it this silently no-ops and turbo degrades to a very still popup.
-shake_popup() {
-  osascript <<'APPLESCRIPT' >/dev/null 2>&1
-try
-  tell application "System Events"
-    if exists process "qlmanage" then
-      tell process "qlmanage"
-        set {origX, origY} to position of window 1
-        repeat 18 times
-          set position of window 1 to {origX + (random number from -30 to 30), origY + (random number from -30 to 30)}
-          delay 0.04
-        end repeat
-        set position of window 1 to {origX, origY}
-      end tell
-    end if
-  end tell
-end try
-APPLESCRIPT
-}
-
 show_popup() {
-  local img="$1" ql_pid
+  local img="$1" overlay
   case "$(uname -s)" in
     Darwin)
-      qlmanage -p "$img" >/dev/null 2>&1 &
-      ql_pid=$!
-      if [ "$mode" = "turbo" ]; then
-        sleep 0.4
-        shake_popup
+      # The overlay owns its own window, so turbo can shake it without the
+      # Accessibility permission that moving another app's window needs.
+      overlay="$("$root_dir/bin/wilhelm-build" overlay 2>/dev/null)"
+      if [ -n "$overlay" ] && [ -x "$overlay" ]; then
+        "$overlay" --image "$img" --mode "$mode" \
+          --seconds "${WILHELM_ALERT_POPUP_SECONDS:-2.4}"
+      elif command -v qlmanage >/dev/null 2>&1; then
+        # No Swift toolchain: a plain Quick Look panel, no shake.
+        qlmanage -p "$img" >/dev/null 2>&1 &
+        local ql_pid=$!
+        sleep "${WILHELM_ALERT_POPUP_SECONDS:-2.4}"
+        kill "$ql_pid" 2>/dev/null
       fi
-      sleep "${WILHELM_ALERT_POPUP_SECONDS:-3}"
-      kill "$ql_pid" 2>/dev/null
       ;;
     Linux)
       # No auto-close and no shake — whatever handles images gets it.
@@ -141,8 +136,6 @@ if [ "$mode" != "light" ]; then
   if [ -z "$image" ]; then
     echo "wilhelm-alert: no popup image for '$source_id' — showing nothing." >&2
     echo "  Add one at $assets_dir/scream-$source_id.png (see assets/README.md)" >&2
-  elif [ "$(uname -s)" = "Darwin" ] && ! command -v qlmanage >/dev/null 2>&1; then
-    echo "wilhelm-alert: qlmanage not found, cannot show popup" >&2
   else
     ( show_popup "$image" >/dev/null 2>&1 & disown ) 2>/dev/null \
       || show_popup "$image" >/dev/null 2>&1 &

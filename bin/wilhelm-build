@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# Compiles the Swift bits on demand and caches them outside the repo.
+#
+# Binaries live in ~/.cache/wilhelm-alert keyed by a hash of their source,
+# which matters because agents run this from a *copied* plugin cache: a
+# per-repo build directory would be rebuilt from scratch on every plugin
+# update, and a committed binary would be wrong for half the architectures
+# that might install it.
+#
+# Usage: wilhelm-build <overlay|settings>   # prints the binary path
+set -uo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cache_dir="${XDG_CACHE_HOME:-$HOME/.cache}/wilhelm-alert"
+
+target="${1:-}"
+case "$target" in
+  overlay)  source_file="$root_dir/app/Overlay.swift" ;;
+  settings) source_file="$root_dir/app/Settings.swift" ;;
+  *)
+    echo "usage: wilhelm-build <overlay|settings>" >&2
+    exit 2
+    ;;
+esac
+
+[ -f "$source_file" ] || { echo "wilhelm-build: missing $source_file" >&2; exit 1; }
+command -v swiftc >/dev/null 2>&1 || {
+  echo "wilhelm-build: swiftc not found (install Xcode command line tools: xcode-select --install)" >&2
+  exit 1
+}
+
+hash="$(shasum -a 256 "$source_file" | cut -c1-12)"
+binary="$cache_dir/wilhelm-$target-$hash-$(uname -m)"
+
+if [ -x "$binary" ]; then
+  printf '%s' "$binary"
+  exit 0
+fi
+
+mkdir -p "$cache_dir" || exit 1
+# Build to a temp name first so a failed or half-written compile never
+# leaves a corrupt binary sitting at the cache path we trust.
+tmp_binary="$binary.tmp.$$"
+if ! swiftc -O -o "$tmp_binary" "$source_file" 2>&1; then
+  rm -f "$tmp_binary"
+  echo "wilhelm-build: failed to compile $target" >&2
+  exit 1
+fi
+mv -f "$tmp_binary" "$binary" || { rm -f "$tmp_binary"; exit 1; }
+
+# Old builds of the same target are dead weight once the hash changes.
+find "$cache_dir" -maxdepth 1 -name "wilhelm-$target-*" ! -name "$(basename "$binary")" -delete 2>/dev/null
+
+printf '%s' "$binary"

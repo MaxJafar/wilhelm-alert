@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Opens the wilhelm-alert mini app: pick a mode, test it, install it.
+set -uo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "wilhelm-settings: the mini app is macOS only." >&2
+  echo "  Set your mode by hand instead:" >&2
+  echo "    mkdir -p ~/.config/wilhelm-alert" >&2
+  echo "    echo 'mode=turbo' > ~/.config/wilhelm-alert/config" >&2
+  exit 1
+fi
+
+binary="$("$root_dir/bin/wilhelm-build" settings)" || exit 1
+[ -n "$binary" ] || exit 1
+
+exec "$binary" --root "$root_dir"
