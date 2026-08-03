@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# Plays an alert sound when invoked. Designed to be wired into agent
+# "task finished" hooks (Claude Code Stop, Codex Stop/SessionEnd,
+# Antigravity Stop, etc.) — see integrations/ for per-tool config.
+#
+# Sound resolution order:
+#   1. $WILHELM_ALERT_SOUND        (explicit override)
+#   2. <repo>/sounds/wilhelm-scream.* (first match, any common audio ext)
+#
+# Exits 0 even when no sound is found/played, so a missing sound file
+# never blocks or fails the calling agent's hook chain.
+set -uo pipefail
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+sounds_dir="$script_dir/../sounds"
+
+resolve_sound() {
+  if [ -n "${WILHELM_ALERT_SOUND:-}" ]; then
+    printf '%s' "$WILHELM_ALERT_SOUND"
+    return
+  fi
+  for f in "$sounds_dir"/wilhelm-scream.*; do
+    if [ -f "$f" ]; then
+      printf '%s' "$f"
+      return
+    fi
+  done
+}
+
+sound="$(resolve_sound)"
+
+if [ -z "$sound" ] || [ ! -f "$sound" ]; then
+  echo "wilhelm-alert: no sound file found." >&2
+  echo "  Drop one at $sounds_dir/wilhelm-scream.mp3 (or .wav/.aiff)," >&2
+  echo "  or export WILHELM_ALERT_SOUND=/path/to/sound.mp3" >&2
+  exit 0
+fi
+
+play() {
+  case "$(uname -s)" in
+    Darwin)
+      afplay "$sound"
+      ;;
+    Linux)
+      if command -v paplay >/dev/null 2>&1; then
+        paplay "$sound"
+      elif command -v aplay >/dev/null 2>&1; then
+        aplay "$sound" >/dev/null 2>&1
+      elif command -v ffplay >/dev/null 2>&1; then
+        ffplay -nodisp -autoexit -loglevel quiet "$sound"
+      else
+        echo "wilhelm-alert: no audio player found (tried paplay, aplay, ffplay)" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      echo "wilhelm-alert: unsupported OS $(uname -s)" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# Run detached so we never block/delay the caller's hook chain.
+( play >/dev/null 2>&1 & disown ) 2>/dev/null || play >/dev/null 2>&1 &
+
+exit 0

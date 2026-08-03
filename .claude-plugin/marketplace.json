@@ -1,0 +1,14 @@
+{
+  "name": "wilhelm-alert-marketplace",
+  "owner": {
+    "name": "Your Name"
+  },
+  "description": "Marketplace for the wilhelm-alert plugin (agent task-completion sound alerts)",
+  "plugins": [
+    {
+      "name": "wilhelm-alert",
+      "source": "./",
+      "description": "Plays an alert sound when Claude Code finishes responding"
+    }
+  ]
+}

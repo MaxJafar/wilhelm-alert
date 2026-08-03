@@ -1,0 +1,11 @@
+{
+  "wilhelm-alert": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "/ABSOLUTE/PATH/TO/wilhelm/bin/wilhelm-alert",
+        "timeout": 10
+      }
+    ]
+  }
+}

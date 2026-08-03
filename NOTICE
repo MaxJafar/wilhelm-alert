@@ -1,0 +1,9 @@
+wilhelm-alert
+Copyright 2026 [your name here]
+
+Licensed under the Apache License, Version 2.0 (the "License").
+See the LICENSE file for the full license text.
+
+This project does not bundle any audio. The Wilhelm scream sound effect
+referenced in documentation and examples is a separately copyrighted sound
+effect and is not distributed with this software — see sounds/README.md.
