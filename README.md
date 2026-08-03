@@ -69,10 +69,21 @@ for one-off tests.
 
 Either way, add a sound file if you want the full effect:
 
-**A scream.** Drop `sounds/wilhelm-scream.mp3` (`.wav`/`.aiff` fine too), or
-point `WILHELM_ALERT_SOUND` at any audio file. The real Wilhelm scream is a
-copyrighted sound effect, so you bring your own — see
-[sounds/README.md](sounds/README.md).
+**A scream.** No audio ships with this repo — the Wilhelm scream is a
+copyrighted sound effect. Grab one ([BigSoundBank](https://bigsoundbank.com/wilhelm-scream-s0477.html)
+has a free download) and drop it at `sounds/wilhelm-scream.wav` (`.mp3`/`.aiff`
+work too). See [sounds/README.md](sounds/README.md).
+
+If you installed as a plugin, put the **absolute path** in your config
+instead:
+
+```
+sound=/full/path/to/wilhelm-scream.wav
+```
+
+Agents run a *copy* of this folder, and `sounds/` is gitignored — so a copy
+made from GitHub has no audio in it, and a relative lookup finds nothing. An
+absolute path is immune to which copy is running.
 
 The repository includes default Codex and Claude faces for `middle` and
 `turbo`. To replace one, copy an image to your clipboard and run:
@@ -146,8 +157,10 @@ someone else's architecture.
 
 ## Things that will go wrong
 
-**It worked when I ran it, but the agent stays silent.** You changed the
-repo and didn't bump + update the plugin. See the note above.
+**It worked when I ran it, but the agent stays silent.** Either you changed
+the repo without bumping + updating the plugin, or the plugin copy has no
+audio in it because `sounds/` is gitignored. Put an absolute `sound=` path
+in your config — see [Setup](#setup).
 
 **Nothing happens at all.** You didn't add a sound file. See above.
 
