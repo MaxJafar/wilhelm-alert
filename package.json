@@ -21,10 +21,12 @@
   ],
   "bin": {
     "wilhelm-alert": "bin/wilhelm-alert",
-    "wilhelm-settings": "bin/wilhelm-settings"
+    "wilhelm-settings": "bin/wilhelm-settings",
+    "wilhelm-face": "bin/wilhelm-face"
   },
   "scripts": {
     "setup": "./bin/wilhelm-settings",
+    "face": "./bin/wilhelm-face",
     "test-alert": "./bin/wilhelm-alert",
     "build": "./bin/wilhelm-build overlay && ./bin/wilhelm-build settings",
     "postinstall": "./bin/wilhelm-build overlay >/dev/null 2>&1 || true"

@@ -55,8 +55,15 @@ point `WILHELM_ALERT_SOUND` at any audio file. The real Wilhelm scream is a
 copyrighted sound effect, so you bring your own — see
 [sounds/README.md](sounds/README.md).
 
-**Faces**, if you want `middle` or `turbo`. Drop `assets/scream-claude.png`
-and `assets/scream-codex.png` — see [assets/README.md](assets/README.md).
+**Faces**, if you want `middle` or `turbo`. Copy an image to your clipboard
+and run:
+
+```bash
+./bin/wilhelm-face claude    # then again with: codex
+```
+
+It saves to `assets/scream-<name>.png` and shrinks anything oversized. You
+can also drop files in [assets/](assets/README.md) by hand.
 
 Then check it works:
 

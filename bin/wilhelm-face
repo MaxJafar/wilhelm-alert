@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# Saves the image currently on your clipboard as the face for an agent.
+#
+#   wilhelm-face claude    # copy the image, then run this
+#   wilhelm-face codex
+#   wilhelm-face generic
+#
+# Beats hunting for a Save As dialog: right-click the image anywhere,
+# Copy Image, run this.
+set -uo pipefail
+
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+assets_dir="$root_dir/assets"
+
+name="${1:-}"
+if [ -z "$name" ]; then
+  echo "usage: wilhelm-face <claude|codex|generic|any-name>" >&2
+  echo "  Copy an image to the clipboard first, then run this." >&2
+  exit 2
+fi
+
+if [ "$(uname -s)" != "Darwin" ]; then
+  echo "wilhelm-face: macOS only. Save your image to $assets_dir/scream-$name.png by hand." >&2
+  exit 1
+fi
+
+mkdir -p "$assets_dir" || exit 1
+out="$assets_dir/scream-$name.png"
+
+# AppleScript is the least painful way to get raw PNG bytes off the
+# pasteboard without compiling anything.
+if ! osascript - "$out" <<'APPLESCRIPT' 2>/dev/null
+on run argv
+  set outPath to item 1 of argv
+  set imageData to (the clipboard as «class PNGf»)
+  set handle to open for access (POSIX file outPath) with write permission
+  set eof handle to 0
+  write imageData to handle
+  close access handle
+end run
+APPLESCRIPT
+then
+  echo "wilhelm-face: no image on the clipboard." >&2
+  echo "  Right-click the image → Copy Image, then run this again." >&2
+  exit 1
+fi
+
+if [ ! -s "$out" ]; then
+  rm -f "$out"
+  echo "wilhelm-face: clipboard had no usable image data." >&2
+  exit 1
+fi
+
+# The overlay renders at 300pt, so anything huge is pure weight — and this
+# file gets copied into every agent's plugin cache on each update.
+max_edge=1024
+if command -v sips >/dev/null 2>&1; then
+  width="$(sips -g pixelWidth "$out" 2>/dev/null | awk '/pixelWidth/{print $2}')"
+  if [ -n "$width" ] && [ "$width" -gt "$max_edge" ] 2>/dev/null; then
+    sips -Z "$max_edge" "$out" >/dev/null 2>&1 && echo "Scaled down to ${max_edge}px"
+  fi
+fi
+
+echo "Saved $(du -h "$out" | cut -f1) → assets/scream-$name.png"
+
+# Any other file with this basename would shadow or race the new one, since
+# the alert just takes the first extension it finds.
+for stale in "$assets_dir/scream-$name".*; do
+  [ "$stale" = "$out" ] || { rm -f "$stale"; echo "Removed older $(basename "$stale")"; }
+done
