@@ -198,6 +198,9 @@ function record(fired, reason, extra = {}) {
     // Antigravity hands us the model outright; Claude Code only names a
     // transcript, so that one has to be read out of the file.
     model: payload.modelName || modelFromTranscript(payload.transcript_path),
+    // Free-form tag from --label, for telling apart two configs that both
+    // point here (say a global hooks file and a workspace one).
+    label: args.label || null,
     pid: process.pid,
     ...extra,
   });

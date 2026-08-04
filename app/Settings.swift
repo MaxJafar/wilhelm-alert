@@ -243,10 +243,16 @@ enum AgentProbe {
             return config.contains("wilhelm-alert") ? .connected : .notConnected
 
         case "antigravity":
-            // Antigravity's global customization root is ~/.agents, the same
-            // convention Codex uses for its own plugin marketplace.
-            return text(at: home.appendingPathComponent(".agents/hooks.json"))
-                .contains("wilhelm-alert") ? .connected : .notConnected
+            // Antigravity walks up from the workspace looking for .agents,
+            // so a hook can live either beside the repo or in the home
+            // directory. Only the workspace one is confirmed to be read.
+            for candidate in [
+                URL(fileURLWithPath: repoRoot).appendingPathComponent(".agents/hooks.json"),
+                home.appendingPathComponent(".agents/hooks.json"),
+            ] where text(at: candidate).contains("wilhelm-alert") {
+                return .connected
+            }
+            return .notConnected
 
         default:
             return .notConnected

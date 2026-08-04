@@ -98,12 +98,14 @@ function Get-AgentStatus {
             return 'notConnected'
         }
         'antigravity' {
-            # Antigravity's global customization root is ~/.agents, the same
-            # convention Codex uses for its own plugin marketplace.
-            $hooks = Join-Path $home_ '.agents\hooks.json'
-            if ((Test-Path -LiteralPath $hooks) -and
-                ((Get-Content -LiteralPath $hooks -Raw) -match 'wilhelm-alert')) {
-                return 'connected'
+            # Antigravity walks up from the workspace looking for .agents, so
+            # a hook can live either beside the repo or in the home directory.
+            foreach ($candidate in @((Join-Path $Root '.agents\hooks.json'),
+                                     (Join-Path $home_ '.agents\hooks.json'))) {
+                if ((Test-Path -LiteralPath $candidate) -and
+                    ((Get-Content -LiteralPath $candidate -Raw) -match 'wilhelm-alert')) {
+                    return 'connected'
+                }
             }
             return 'notConnected'
         }

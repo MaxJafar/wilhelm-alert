@@ -1,0 +1,11 @@
+{
+  "wilhelm-alert": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "node \"../bin/wilhelm-alert.js\" --source antigravity",
+        "timeout": 10
+      }
+    ]
+  }
+}

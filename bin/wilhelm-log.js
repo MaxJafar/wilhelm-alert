@@ -102,6 +102,7 @@ for (const entry of entries) {
     entry.model && `model=${entry.model}`,
     entry.mode && `mode=${entry.mode}`,
     entry.session && `session=${entry.session}`,
+    entry.label && `label=${entry.label}`,
   ].filter(Boolean);
 
   process.stdout.write(`${dim(localTime(entry.at))}  ${marker}  ${entry.reason || ''}\n`);

@@ -1,6 +1,6 @@
 {
   "name": "wilhelm-alert",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "description": "Plays an alert sound when Codex finishes a turn or session",
   "author": {
     "name": "MaxJafar",

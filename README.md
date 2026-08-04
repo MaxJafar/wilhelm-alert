@@ -195,9 +195,16 @@ message, so a long task screams at you repeatedly.
 ### Antigravity
 
 Copy [integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
-to `~/.agents/hooks.json` (all workspaces) or `<workspace>/.agents/hooks.json`
-(one project), with the path filled in. Merge into an existing file rather
-than replacing it — Antigravity keys hooks by name and merges them.
+to `<workspace>/.agents/hooks.json`, with the path filled in. Antigravity
+walks up from the workspace looking for `.agents`, so `~/.agents/hooks.json`
+should cover every project — but the workspace one is what I've actually
+confirmed firing. Merge into an existing file rather than replacing it;
+Antigravity keys hooks by name and merges them.
+
+**Then fully quit and reopen Antigravity.** It discovers customizations when
+the language server starts, and closing the window doesn't stop it — the
+hook is invisible to a running instance no matter how correct the file is.
+This is the whole reason it "doesn't work" the first time.
 
 It hooks `Stop`, which fires when the execution loop terminates. See
 [integrations/antigravity/](integrations/antigravity/README.md) for the
@@ -255,6 +262,12 @@ pnpm log              # last 25
 pnpm log --skipped    # only the suppressed ones
 pnpm log --all
 ```
+
+If a hook seems dead, check here first: **no entry at all** means the agent
+never ran the command (usually a config it hasn't reloaded), while an entry
+with a reason means it ran and was deliberately suppressed. Pass `--label
+something` in a hook command to tag its entries, which is how you tell apart
+two configs that both point here.
 
 ```
 Aug 04, 12:39:06 AM  🔊 SCREAMED  end of turn
