@@ -20,7 +20,8 @@ const POSIX = {
   panel: ['bin/wilhelm-settings', []],
   update: ['bin/wilhelm-update', []],
   face: ['bin/wilhelm-face', []],
-  build: ['bin/wilhelm-build', ['overlay']],
+  // `build` is both targets; wilhelm-build itself only ever does one.
+  build: null,
 };
 
 const WINDOWS = {
@@ -63,6 +64,14 @@ if (process.platform === 'win32') {
 }
 
 if (process.platform === 'darwin') {
+  if (target === 'build') {
+    const builder = path.join(ROOT, 'bin/wilhelm-build');
+    for (const artifact of ['overlay', 'settings']) {
+      const result = spawnSync(builder, [artifact], { stdio: 'inherit', cwd: ROOT });
+      if (result.status !== 0) process.exit(result.status ?? 1);
+    }
+    process.exit(0);
+  }
   const [script, defaults] = POSIX[target];
   run(path.join(ROOT, script), [...defaults, ...rest]);
 }
