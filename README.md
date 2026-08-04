@@ -194,10 +194,15 @@ message, so a long task screams at you repeatedly.
 
 ### Antigravity
 
-No plugin format to hook into yet, so do it by hand: drop
-[integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
-into `.agents/` in your workspace or `~/.gemini/config/`, with the path
-filled in.
+Copy [integrations/antigravity/hooks.json](integrations/antigravity/hooks.json)
+to `~/.agents/hooks.json` (all workspaces) or `<workspace>/.agents/hooks.json`
+(one project), with the path filled in. Merge into an existing file rather
+than replacing it — Antigravity keys hooks by name and merges them.
+
+It hooks `Stop`, which fires when the execution loop terminates. See
+[integrations/antigravity/](integrations/antigravity/README.md) for the
+details that bite: hooks block the agent loop, and `Stop` expects a JSON
+decision back on stdout.
 
 ### OpenClaw
 

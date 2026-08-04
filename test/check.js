@@ -315,6 +315,37 @@ check('a repeat within the debounce window is suppressed', () => {
   return last && !last.fired ? null : 'a second stop screamed immediately after the first';
 });
 
+// Antigravity re-enters the agent loop unless stdout says otherwise, while
+// Claude Code interprets stdout on Stop as well — so the decision has to go
+// to exactly one of them.
+check('Antigravity gets a stop decision on stdout', () => {
+  const out = runAlert(
+    { conversationId: 'ag000001', modelName: 'gemini-3-pro', terminationReason: 'model_stop' },
+    ['--source', 'antigravity', '--force']
+  );
+  if (out.status !== 0) return `exited ${out.status}`;
+  let decision;
+  try {
+    decision = JSON.parse(out.stdout);
+  } catch {
+    return `stdout was not JSON: ${JSON.stringify(out.stdout)}`;
+  }
+  if (decision.decision === 'continue') return 'answered "continue", which would loop the agent forever';
+  return decision.decision ? null : 'no decision field';
+});
+
+check('other agents get a clean stdout', () => {
+  const noisy = [];
+  for (const [label, payload, args] of [
+    ['claude', { hook_event_name: 'Stop', session_id: 'cc000001' }, ['--force']],
+    ['codex', { hook_event_name: 'Stop', session_id: 'cx000001' }, ['--source', 'codex', '--force']],
+  ]) {
+    const out = runAlert(payload, args);
+    if ((out.stdout || '').trim()) noisy.push(`${label} wrote ${JSON.stringify(out.stdout)}`);
+  }
+  return noisy.length ? noisy.join('\n') : null;
+});
+
 check('every failure path still exits 0', () => {
   const cases = [
     ['unknown mode', ['--mode', 'nonsense', '--force']],

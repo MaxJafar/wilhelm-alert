@@ -181,21 +181,36 @@ function appendHistory(entry) {
   }
 }
 
+// Antigravity encodes its payload in camelCase (protojson) rather than the
+// snake_case Claude Code and Codex use, so every field needs both spellings.
 function record(fired, reason, extra = {}) {
+  const session = payload.session_id || payload.conversationId || null;
   appendHistory({
     at: new Date().toISOString(),
     fired,
     reason,
     source,
     mode,
-    event: payload.hook_event_name || null,
-    session: payload.session_id ? String(payload.session_id).slice(0, 8) : null,
-    end_reason: payload.reason || null,
-    cwd: payload.cwd || process.cwd(),
-    model: modelFromTranscript(payload.transcript_path),
+    event: payload.hook_event_name || (payload.terminationReason ? 'Stop' : null),
+    session: session ? String(session).slice(0, 8) : null,
+    end_reason: payload.reason || payload.terminationReason || null,
+    cwd: payload.cwd || (payload.workspacePaths || [])[0] || process.cwd(),
+    // Antigravity hands us the model outright; Claude Code only names a
+    // transcript, so that one has to be read out of the file.
+    model: payload.modelName || modelFromTranscript(payload.transcript_path),
     pid: process.pid,
     ...extra,
   });
+}
+
+// Antigravity's Stop hook is a contract: it reads a JSON decision from stdout
+// and re-enters the agent loop on "continue". Staying silent risks it
+// treating the empty output as a malformed response, so answer explicitly —
+// and only for Antigravity, since Claude Code reads stdout on Stop too and
+// would try to interpret this.
+function answerAntigravity() {
+  if (source !== 'antigravity' && !payload.terminationReason) return;
+  process.stdout.write(JSON.stringify({ decision: 'stop' }));
 }
 
 // -------------------------------------------------------------- should we fire
@@ -382,6 +397,7 @@ const suppressed = forced ? null : suppressionReason();
 
 if (suppressed) {
   record(false, suppressed);
+  answerAntigravity();
   process.exit(0);
 }
 
@@ -411,4 +427,5 @@ if (mode !== 'light') {
   }
 }
 
+answerAntigravity();
 process.exit(0);

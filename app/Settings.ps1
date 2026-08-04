@@ -98,12 +98,12 @@ function Get-AgentStatus {
             return 'notConnected'
         }
         'antigravity' {
-            foreach ($rel in @('.gemini\config\hooks.json', '.antigravity\hooks.json')) {
-                $candidate = Join-Path $home_ $rel
-                if ((Test-Path -LiteralPath $candidate) -and
-                    ((Get-Content -LiteralPath $candidate -Raw) -match 'wilhelm-alert')) {
-                    return 'connected'
-                }
+            # Antigravity's global customization root is ~/.agents, the same
+            # convention Codex uses for its own plugin marketplace.
+            $hooks = Join-Path $home_ '.agents\hooks.json'
+            if ((Test-Path -LiteralPath $hooks) -and
+                ((Get-Content -LiteralPath $hooks -Raw) -match 'wilhelm-alert')) {
+                return 'connected'
             }
             return 'notConnected'
         }

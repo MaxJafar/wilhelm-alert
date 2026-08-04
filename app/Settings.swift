@@ -243,12 +243,10 @@ enum AgentProbe {
             return config.contains("wilhelm-alert") ? .connected : .notConnected
 
         case "antigravity":
-            for candidate in [".gemini/config/hooks.json", ".antigravity/hooks.json"] {
-                if text(at: home.appendingPathComponent(candidate)).contains("wilhelm-alert") {
-                    return .connected
-                }
-            }
-            return .notConnected
+            // Antigravity's global customization root is ~/.agents, the same
+            // convention Codex uses for its own plugin marketplace.
+            return text(at: home.appendingPathComponent(".agents/hooks.json"))
+                .contains("wilhelm-alert") ? .connected : .notConnected
 
         default:
             return .notConnected
