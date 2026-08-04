@@ -38,13 +38,17 @@ while sharing the same popup behavior.
 
 | | Sound | Overlay | Shake | Mini app |
 | --- | --- | --- | --- | --- |
-| macOS | ✅ | ✅ | ✅ | ✅ |
-| Windows | ✅ | ✅ | ✅ | ❌ edit the config file |
+| macOS | ✅ | ✅ | ✅ | ✅ AppKit |
+| Windows | ✅ | ✅ | ✅ | ✅ WPF |
 | Linux | ✅ | ⚠️ needs python3-tk | ⚠️ same | ❌ edit the config file |
 
-The core is Node, so all three behave the same. The overlay is native per
-platform: Swift on macOS, WPF on Windows, Tk on Linux. Only macOS gets the
-mini app.
+The core is Node, so all three behave the same, and every `pnpm` command
+below works everywhere. Only the GUI is native per platform: Swift/AppKit on
+macOS, PowerShell/WPF on Windows, Tk on Linux. Linux gets the sound and the
+overlay but no panel yet.
+
+Nothing to compile on Windows — the overlay and the panel are both scripts,
+and PowerShell ships with the OS.
 
 ## Modes
 
@@ -73,15 +77,23 @@ pnpm install
 pnpm app
 ```
 
-`pnpm app` installs **Wilhelm Alert.app** into `~/Applications` and opens it.
-After that it's in Spotlight — ⌘-space, "wilhelm" — so you never need to come
-back to this folder. Pick your mode, hit **Test it** to hear it, and install
-into your agents with a button. No browser, no localhost, no menu bar clutter.
+`pnpm app` puts the panel somewhere you can actually find it, then opens it:
 
-Don't want the app in `~/Applications`? `pnpm panel` opens the same window
-straight from the repo.
+- **macOS** — installs `Wilhelm Alert.app` into `~/Applications`, so it's in
+  Spotlight (⌘-space, "wilhelm") and Launchpad.
+- **Windows** — adds a *Wilhelm Alert* Start Menu entry, so it's one Windows
+  key + "wilhelm" away.
 
-Prefer the terminal? The mode lives in `~/.config/wilhelm-alert/config`:
+Either way you never need to come back to this folder. Pick your mode, hit
+**Test it** to hear it, and install into your agents with a button. No
+browser, no localhost, no menu bar clutter.
+
+Don't want it installed anywhere? `pnpm panel` opens the same window straight
+from the repo. To remove the shortcut later: `./bin/wilhelm-app --uninstall`
+on macOS, `bin\wilhelm-app.cmd --uninstall` on Windows.
+
+Prefer the terminal? The mode lives in `~/.config/wilhelm-alert/config`
+(`%APPDATA%\wilhelm-alert\config` on Windows):
 
 ```bash
 mkdir -p ~/.config/wilhelm-alert && echo 'mode=turbo' > ~/.config/wilhelm-alert/config
@@ -115,7 +127,7 @@ Codex, and Cursor for `middle` and `turbo`. To replace one, copy an image to
 your clipboard and run:
 
 ```bash
-./bin/wilhelm-face claude    # then again with: codex
+pnpm face claude    # then again with: codex
 ```
 
 It saves to `assets/scream-<name>.png` and shrinks anything oversized. You
@@ -124,7 +136,7 @@ can also drop files in [assets/](assets/README.md) by hand.
 Then check it works:
 
 ```bash
-WILHELM_ALERT_MODE=turbo ./bin/wilhelm-alert
+pnpm test-alert
 ```
 
 ## Install it into your agent
@@ -274,6 +286,10 @@ approved the hook. `codex plugin list` will happily report `installed,
 enabled` while Codex skips the hook entirely, and `pnpm log` stays empty
 because the script is never run. Start `codex` interactively and approve the
 hook review. See [Codex CLI](#codex-cli) above.
+
+**No panel on Windows.** The Start Menu entry runs `powershell`; if your
+execution policy blocks scripts, launch it once with
+`bin\wilhelm-app.cmd`, which passes `-ExecutionPolicy Bypass` explicitly.
 
 **No overlay on macOS, just the scream.** The overlay is a tiny Swift
 program built on first use, so it needs Xcode command line tools
