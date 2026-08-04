@@ -1,5 +1,8 @@
 # wilhelm-alert
 
+[![check](https://github.com/MaxJafar/wilhelm-alert/actions/workflows/check.yml/badge.svg)](https://github.com/MaxJafar/wilhelm-alert/actions/workflows/check.yml)
+[![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 ![Wilhelm Scream — task complete](assets/wilhelm-scream-banner.png)
 
 Your agent finishes a task. It screams. You look up.
@@ -322,6 +325,24 @@ rights to Anthropic's, OpenAI's, or anyone else's marks, isn't affiliated with
 or endorsed by them, and ships no official brand assets. Draw what you like on
 your own machine; think twice before committing it to a public repo with
 someone's brand on it.
+
+## Contributing
+
+Fork it, break it, make it louder. Before opening a PR:
+
+```bash
+pnpm check
+```
+
+That's the same suite CI runs on macOS, Windows and Linux. Every assertion in
+it exists because the corresponding bug shipped at least once — hooks firing
+on session teardown, manifests drifting out of version sync, script names
+shadowed by pnpm built-ins. Checks that need a toolchain you don't have
+(Swift, PowerShell) skip rather than fail.
+
+Bump the version in `package.json` and both `plugin.json` files together —
+`pnpm check` fails if they drift, because agents cache plugins by version and
+a mismatch leaves them silently running an old copy.
 
 ## License
 
