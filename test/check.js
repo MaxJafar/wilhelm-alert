@@ -123,18 +123,30 @@ if (!has('pnpm')) {
 } else {
   const scripts = Object.keys(readJson('package.json').scripts || {});
   const shadowed = [];
+  let probeWorked = false;
+
   for (const name of scripts) {
     if (name === 'postinstall') continue; // lifecycle hook, never typed by hand
-    const out = spawnSync('pnpm', ['help', name], { encoding: 'utf8' });
+    // pnpm is a .cmd on Windows, which Node cannot spawn without a shell.
+    const out = spawnSync('pnpm', ['help', name], { encoding: 'utf8', shell: process.platform === 'win32' });
     const text = `${out.stdout || ''}${out.stderr || ''}`;
-    // A built-in prints its own usage; anything else reports no match.
+    // A built-in prints its own usage; anything else reports no match. An
+    // empty result means the probe never ran, so treat it as unknown rather
+    // than reporting every script as shadowed.
+    if (!text.trim()) continue;
+    probeWorked = true;
     if (!text.includes('No results')) shadowed.push(name);
   }
-  check('script names are not pnpm built-ins', () =>
-    shadowed.length
-      ? `pnpm would run its own command instead of these scripts: ${shadowed.join(', ')}`
-      : null
-  );
+
+  if (!probeWorked) {
+    skip('script names are not pnpm built-ins', 'could not run pnpm help');
+  } else {
+    check('script names are not pnpm built-ins', () =>
+      shadowed.length
+        ? `pnpm would run its own command instead of these scripts: ${shadowed.join(', ')}`
+        : null
+    );
+  }
 }
 
 // -------------------------------------------------------------- filesystem
