@@ -29,27 +29,46 @@ function Get-ConfigPath {
     Join-Path $base 'wilhelm-alert\config'
 }
 
-function Get-ConfiguredMode {
+function Get-ConfigValue {
+    param([string]$Key, [string]$Default)
     $path = Get-ConfigPath
-    if (-not (Test-Path -LiteralPath $path)) { return 'light' }
+    if (-not (Test-Path -LiteralPath $path)) { return $Default }
     foreach ($line in Get-Content -LiteralPath $path -ErrorAction SilentlyContinue) {
-        if ($line -match '^\s*mode\s*=\s*(\S+)') { return $Matches[1] }
+        if ($line -match "^\s*$Key\s*=\s*(\S+)") { return $Matches[1] }
     }
-    return 'light'
+    return $Default
 }
 
-function Set-ConfiguredMode {
-    param([string]$Mode)
+function Set-ConfigValue {
+    param([string]$Key, [string]$Value)
     $path = Get-ConfigPath
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
 
     $lines = @()
     if (Test-Path -LiteralPath $path) {
         # Keep any other keys the user set by hand, such as an absolute sound path.
-        $lines = @(Get-Content -LiteralPath $path | Where-Object { $_ -notmatch '^\s*mode\s*=' })
+        $lines = @(Get-Content -LiteralPath $path | Where-Object { $_ -notmatch "^\s*$Key\s*=" })
     }
-    $lines += "mode=$Mode"
+    $lines += "$Key=$Value"
     Set-Content -LiteralPath $path -Value $lines -Encoding UTF8
+}
+
+function Get-ConfiguredMode { Get-ConfigValue -Key 'mode' -Default 'light' }
+
+function Set-ConfiguredMode {
+    param([string]$Mode)
+    Set-ConfigValue -Key 'mode' -Value $Mode
+}
+
+# Anything unparseable or out of range reads as full volume, matching how
+# wilhelm-alert.js falls back rather than refusing to make a noise.
+function Get-ConfiguredVolume {
+    $parsed = 0
+    $raw = Get-ConfigValue -Key 'volume' -Default '100'
+    if ([int]::TryParse($raw, [ref]$parsed) -and $parsed -ge 0 -and $parsed -le 100) {
+        return $parsed
+    }
+    return 100
 }
 
 # ------------------------------------------------------- connection status
@@ -191,6 +210,50 @@ $xaml = @'
       <Setter Property="FontFamily" Value="Segoe UI"/>
       <Setter Property="Margin" Value="0,0,0,8"/>
     </Style>
+    <!-- The stock slider is a white bar with a grey block on it, which reads as
+         a different application next to the cards. The filled half is just the
+         decrease button restyled, which keeps the fill tracking the value
+         without a converter, and leaves clicking the track working. -->
+    <Style TargetType="Slider">
+      <Setter Property="Cursor" Value="Hand"/>
+      <Setter Property="Template">
+        <Setter.Value>
+          <ControlTemplate TargetType="Slider">
+            <Grid Height="20" VerticalAlignment="Center">
+              <Track x:Name="PART_Track">
+                <Track.DecreaseRepeatButton>
+                  <RepeatButton Command="Slider.DecreaseLarge" Cursor="Hand">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="#E84F2E" Height="4" CornerRadius="2" VerticalAlignment="Center"/>
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.DecreaseRepeatButton>
+                <Track.IncreaseRepeatButton>
+                  <RepeatButton Command="Slider.IncreaseLarge" Cursor="Hand">
+                    <RepeatButton.Template>
+                      <ControlTemplate TargetType="RepeatButton">
+                        <Border Background="#2E2E34" Height="4" CornerRadius="2" VerticalAlignment="Center"/>
+                      </ControlTemplate>
+                    </RepeatButton.Template>
+                  </RepeatButton>
+                </Track.IncreaseRepeatButton>
+                <Track.Thumb>
+                  <Thumb Cursor="Hand">
+                    <Thumb.Template>
+                      <ControlTemplate TargetType="Thumb">
+                        <Ellipse Width="15" Height="15" Fill="#F2F2F5" Stroke="#141416" StrokeThickness="2"/>
+                      </ControlTemplate>
+                    </Thumb.Template>
+                  </Thumb>
+                </Track.Thumb>
+              </Track>
+            </Grid>
+          </ControlTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
     <Style TargetType="Button">
       <Setter Property="Background" Value="#2B2B31"/>
       <Setter Property="Foreground" Value="#F2F2F5"/>
@@ -238,9 +301,28 @@ $xaml = @'
       <UniformGrid x:Name="Roster" Columns="5" Margin="0,0,0,4"/>
 
       <!-- modes -->
-      <TextBlock Text="Choose your volume" Style="{StaticResource Section}"/>
+      <TextBlock Text="Choose your chaos" Style="{StaticResource Section}"/>
       <TextBlock Text="How much chaos should follow a finished task?" Style="{StaticResource Sub}"/>
       <StackPanel x:Name="ModeList"/>
+
+      <!-- volume -->
+      <TextBlock Text="Scream volume" Style="{StaticResource Section}"/>
+      <TextBlock Text="How loud it lands. At 0 the popup still arrives, it just shuts up."
+                 Style="{StaticResource Sub}"/>
+      <Border Style="{StaticResource Card}">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="Auto"/>
+          </Grid.ColumnDefinitions>
+          <Slider x:Name="VolumeSlider" Grid.Column="0"
+                  Minimum="0" Maximum="100" IsSnapToTickEnabled="True" TickFrequency="1"
+                  VerticalAlignment="Center" Margin="2,0,14,0"/>
+          <TextBlock x:Name="VolumeValue" Grid.Column="1" Text="100%"
+                     FontSize="13" FontWeight="SemiBold" MinWidth="44"
+                     TextAlignment="Right" VerticalAlignment="Center"/>
+        </Grid>
+      </Border>
 
       <!-- test -->
       <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
@@ -291,6 +373,8 @@ $versionText  = $window.FindName('VersionText')
 $updateDetail = $window.FindName('UpdateDetail')
 $updateButton = $window.FindName('UpdateButton')
 $testButton   = $window.FindName('TestButton')
+$volumeSlider = $window.FindName('VolumeSlider')
+$volumeValue  = $window.FindName('VolumeValue')
 
 function Set-Status { param([string]$Message) $statusText.Text = $Message }
 
@@ -488,6 +572,29 @@ foreach ($mode in $modes) {
 
 Update-ModeSelection
 
+# ------------------------------------------------------------------ volume
+
+$volumeSlider.Value = Get-ConfiguredVolume
+$volumeValue.Text = "$([int]$volumeSlider.Value)%"
+
+# Dragging raises ValueChanged for every step, and every save rewrites the
+# whole config file. So repaint the number immediately and write once the
+# slider has been still for a moment, rather than a hundred times on the way.
+$script:VolumeSave = New-Object Windows.Threading.DispatcherTimer
+$script:VolumeSave.Interval = [TimeSpan]::FromMilliseconds(320)
+$script:VolumeSave.Add_Tick({
+    $script:VolumeSave.Stop()
+    $value = [int]$volumeSlider.Value
+    Set-ConfigValue -Key 'volume' -Value $value
+    Set-Status "Volume set to $value%. Saved to $(Get-ConfigPath)"
+})
+
+$volumeSlider.Add_ValueChanged({
+    $volumeValue.Text = "$([int]$volumeSlider.Value)%"
+    $script:VolumeSave.Stop()
+    $script:VolumeSave.Start()
+})
+
 # ----------------------------------------------------------------- install
 
 $installRows = @{}
@@ -618,10 +725,15 @@ $testButton.Add_Click({
     foreach ($key in $modeRadios.Keys) {
         if ($modeRadios[$key].IsChecked) { $selected = $key }
     }
+    # Pass the slider's value rather than trusting the config file: a save may
+    # still be sitting in the debounce when someone drags and immediately tests.
+    $volume = [int]$volumeSlider.Value
     $alert = Join-Path $Root 'bin\wilhelm-alert.js'
-    Start-Process -FilePath 'node' -ArgumentList @("`"$alert`"", '--force', '--mode', $selected) `
+    Start-Process -FilePath 'node' `
+        -ArgumentList @("`"$alert`"", '--force', '--mode', $selected, '--volume', $volume) `
         -WindowStyle Hidden -WorkingDirectory $Root
-    Set-Status "Testing $selected..."
+    Set-Status $(if ($volume -eq 0) { "Testing $selected at 0% - muted on purpose." }
+                 else { "Testing $selected at $volume%..." })
 })
 
 $claudeButton.Add_Click({
@@ -803,6 +915,12 @@ $updateTimer.Start()
 
 $window.Add_Closed({
     $updateTimer.Stop()
+    # A drag that ends by closing the window would otherwise die in the
+    # debounce, losing the volume the user just picked.
+    if ($script:VolumeSave.IsEnabled) {
+        $script:VolumeSave.Stop()
+        Set-ConfigValue -Key 'volume' -Value ([int]$volumeSlider.Value)
+    }
     # Disposing a runspace mid-request throws, and the fetch is still running
     # whenever the window is closed inside the request timeout.
     if ($script:UpdatePoll) {

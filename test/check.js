@@ -324,6 +324,42 @@ check('a repeat within the debounce window is suppressed', () => {
   return last && !last.fired ? null : 'a second stop screamed immediately after the first';
 });
 
+// The debounce check above passes on a fresh sandbox whether or not --force
+// works, because the first run of all has nothing to be debounced against.
+// This fires twice: the second only screams if --force actually survived being
+// parsed, which it did not when it came last on the line.
+check('--force overrides the debounce', () => {
+  runAlert({ hook_event_name: 'Stop', session_id: 'frc00001' }, ['--force']);
+  const out = runAlert({ hook_event_name: 'Stop', session_id: 'frc00001' }, ['--force']);
+  if (out.status !== 0) return `exited ${out.status}`;
+  const last = historyEntries().at(-1);
+  return last && last.fired ? null : 'the second forced run was debounced despite --force';
+});
+
+// --source rather than --mode on purpose: --mode turbo would open a window.
+check('a standalone flag does not swallow the next argument', () => {
+  const out = runAlert({ hook_event_name: 'Stop', session_id: 'arg00001' },
+    ['--force', '--source', 'codex']);
+  if (out.status !== 0) return `exited ${out.status}`;
+  const last = historyEntries().at(-1);
+  if (!last) return 'nothing was recorded';
+  return last.source === 'codex' ? null : `--force ate --source, leaving source=${last.source}`;
+});
+
+check('volume is recorded, and 0 is not mistaken for unset', () => {
+  const seen = [];
+  for (const value of ['0', '55', '100']) {
+    const out = runAlert({ hook_event_name: 'Stop', session_id: 'vol00001' },
+      ['--volume', value, '--force']);
+    if (out.status !== 0) return `volume ${value} exited ${out.status}`;
+    seen.push(historyEntries().at(-1)?.volume);
+  }
+  const want = [0, 55, 100];
+  return JSON.stringify(seen) === JSON.stringify(want)
+    ? null
+    : `recorded ${JSON.stringify(seen)}, wanted ${JSON.stringify(want)}`;
+});
+
 // Antigravity re-enters the agent loop unless stdout says otherwise, while
 // Claude Code interprets stdout on Stop as well — so the decision has to go
 // to exactly one of them.
@@ -359,6 +395,8 @@ check('every failure path still exits 0', () => {
   const cases = [
     ['unknown mode', ['--mode', 'nonsense', '--force']],
     ['missing sound', ['--sound', '/definitely/not/here.wav', '--force']],
+    ['unparseable volume', ['--volume', 'loud', '--force']],
+    ['volume out of range', ['--volume', '250', '--force']],
     ['garbage on stdin', ['--force']],
   ];
   const broken = [];

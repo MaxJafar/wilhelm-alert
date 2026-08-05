@@ -101,6 +101,9 @@ for (const entry of entries) {
     entry.event && `event=${entry.event}`,
     entry.model && `model=${entry.model}`,
     entry.mode && `mode=${entry.mode}`,
+    // Explicit about 0 rather than truthy: muted is the one volume worth
+    // reporting, and it is the one a truthiness check would throw away.
+    Number.isFinite(entry.volume) && entry.volume !== 100 && `volume=${entry.volume}`,
     entry.session && `session=${entry.session}`,
     entry.label && `label=${entry.label}`,
   ].filter(Boolean);

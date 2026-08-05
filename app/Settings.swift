@@ -519,7 +519,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         section.alignment = .leading
         section.spacing = 7
         section.addArrangedSubview(makeSectionHeader(
-            title: "Choose your volume",
+            title: "Choose your chaos",
             subtitle: "How much chaos should follow a finished task?"
         ))
 

@@ -27,13 +27,20 @@ const warn = (...lines) => lines.forEach((l) => process.stderr.write(`${l}\n`));
 
 // ---------------------------------------------------------------- arguments
 
+// Flags that stand alone. Without knowing them, `--force` ate whatever came
+// next: on its own it set itself to undefined and quietly stopped forcing
+// anything, and in `--force --mode turbo` it swallowed the --mode instead.
+const BOOLEAN_FLAGS = new Set(['force']);
+
 function parseArgs(argv) {
   const out = {};
   for (let i = 0; i < argv.length; i += 1) {
     const [key, inline] = argv[i].split('=');
     if (!key.startsWith('--')) continue;
     const name = key.slice(2);
-    out[name] = inline !== undefined ? inline : argv[++i];
+    if (inline !== undefined) out[name] = inline;
+    else if (BOOLEAN_FLAGS.has(name)) out[name] = true;
+    else out[name] = argv[++i];
   }
   return out;
 }
@@ -84,6 +91,21 @@ if (!VALID_MODES.has(mode)) {
   warn(`wilhelm-alert: unknown mode '${mode}' (want light|middle|turbo), using light`);
   mode = 'light';
 }
+
+// 0-100, because that is the number a slider hands you and the number a human
+// reads back. Every player wants it in different units, so the conversion
+// lives with each one down in playSound.
+function resolveVolume() {
+  const raw = args.volume ?? process.env.WILHELM_ALERT_VOLUME ?? config.volume;
+  if (raw === undefined || raw === '') return 100;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0 || value > 100) {
+    warn(`wilhelm-alert: volume '${raw}' out of range (want 0-100), using 100`);
+    return 100;
+  }
+  return Math.round(value);
+}
+const volume = resolveVolume();
 
 // Codex sets PLUGIN_ROOT *and* CLAUDE_PLUGIN_ROOT for plugin compatibility,
 // so the Codex-only variable has to be checked first or every Codex run
@@ -191,6 +213,7 @@ function record(fired, reason, extra = {}) {
     reason,
     source,
     mode,
+    volume,
     event: payload.hook_event_name || (payload.terminationReason ? 'Stop' : null),
     session: session ? String(session).slice(0, 8) : null,
     end_reason: payload.reason || payload.terminationReason || null,
@@ -322,25 +345,39 @@ function detach(command, commandArgs) {
 const psQuote = (value) => `'${String(value).replace(/'/g, "''")}'`;
 
 function playSound(file) {
-  if (PLATFORM === 'darwin') return detach('afplay', [file]);
+  const gain = volume / 100; // what everything except ffplay wants
+
+  if (PLATFORM === 'darwin') return detach('afplay', ['-v', String(gain), file]);
 
   if (PLATFORM === 'win32') {
     // SoundPlayer handles WAV only; MediaPlayer covers mp3/m4a. Pick by
     // extension so both work without shipping a codec.
-    const script = /\.wav$/i.test(file)
+    //
+    // SoundPlayer also has no volume control whatsoever, so a turned-down WAV
+    // has to go through MediaPlayer instead. Full volume deliberately stays on
+    // SoundPlayer: it is the default, it needs no Media Feature Pack (which N
+    // and KN editions of Windows ship without), and leaving it alone means
+    // nobody who ignores the slider can be affected by this at all.
+    const script = /\.wav$/i.test(file) && volume === 100
       ? `(New-Object Media.SoundPlayer ${psQuote(file)}).PlaySync()`
       : `Add-Type -AssemblyName presentationCore;` +
         `$p=New-Object System.Windows.Media.MediaPlayer;` +
+        `$p.Volume=${gain};` +
         `$p.Open([uri]${psQuote(file)});$p.Play();Start-Sleep -Seconds 5`;
     return detach('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script]);
   }
 
+  // paplay scales to 65536, ffplay to 100, and aplay cannot be turned down at
+  // all — it only ever plays at whatever the mixer is already set to.
   for (const [player, playerArgs] of [
-    ['paplay', [file]],
+    ['paplay', [`--volume=${Math.round(65536 * gain)}`, file]],
     ['aplay', ['-q', file]],
-    ['ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', file]],
+    ['ffplay', ['-nodisp', '-autoexit', '-loglevel', 'quiet', '-volume', String(volume), file]],
   ]) {
     if (spawnSync('sh', ['-c', `command -v ${player}`], { stdio: 'ignore' }).status === 0) {
+      if (player === 'aplay' && volume !== 100) {
+        warn(`wilhelm-alert: aplay has no volume control, playing at full (wanted ${volume}%)`);
+      }
       return detach(player, playerArgs);
     }
   }
@@ -414,7 +451,11 @@ markFired();
 record(true, forced ? 'forced' : 'end of turn');
 
 const sound = resolveSound();
-if (sound) {
+if (sound && volume === 0) {
+  // Muted is a setting, not a failure, so the popup still fires. Silence is
+  // the hardest symptom to diagnose here, which is why the log records it.
+  warn('wilhelm-alert: volume is 0, playing nothing.');
+} else if (sound) {
   playSound(sound);
 } else {
   warn(

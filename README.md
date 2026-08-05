@@ -63,6 +63,22 @@ and PowerShell ships with the OS.
 
 Set it in the app (`pnpm app`), or in `~/.config/wilhelm-alert/config`.
 
+## Volume
+
+How loud is a separate question from how much chaos, so it's a separate
+control: the slider in `pnpm app` writes `volume=` (0–100) to the same config
+file. `--volume 60` overrides it for a single run.
+
+**0 mutes the scream but still shows the popup** — for the open-plan office
+where the face is funny and the noise is a resignation letter.
+
+Two caveats. On Linux, `paplay` and `ffplay` honour it but `aplay` has no
+volume control at all and always plays at whatever the mixer is set to; it says
+so when you ask for anything else. On Windows, turning the volume down switches
+WAV playback from `SoundPlayer`, which cannot attenuate, to `MediaPlayer`,
+which can — leave the slider at 100 and playback is byte-for-byte what it
+always was.
+
 The face that pops up matches whichever agent called it — named
 `scream-<source>` faces are resolved automatically, so OpenClaw, Antigravity,
 Claude Code, Codex, and Cursor can each have a distinct scream.
@@ -296,7 +312,10 @@ the repo without bumping + updating the plugin, or the plugin copy has no
 audio in it because `sounds/` is gitignored. Put an absolute `sound=` path
 in your config — see [Setup](#setup).
 
-**Nothing happens at all.** You didn't add a sound file. See above.
+**Nothing happens at all.** You didn't add a sound file. See above. If the
+popup arrives and the sound doesn't, check the volume — `pnpm log` prints
+`volume=0` on the entry, since a deliberate mute and a broken install look
+identical from the outside.
 
 **It screams at the wrong times.** Check `pnpm log` first — if you see
 `SessionEnd` entries actually firing, you're on a version before 0.5.0 and
