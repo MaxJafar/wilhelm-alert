@@ -51,6 +51,13 @@ function has(command) {
   const probe = process.platform === 'win32' ? 'where' : 'which';
   return spawnSync(probe, [command], { stdio: 'ignore' }).status === 0;
 }
+// Being on PATH is not the same as working: Windows ships a python3.exe stub
+// that has() happily finds, but it is only an ad for the Microsoft Store and
+// exits 49. Probe anything that might be shadowed that way by running it.
+function runs(command, args) {
+  const out = spawnSync(command, args, { stdio: 'ignore' });
+  return !out.error && out.status === 0;
+}
 function readJson(rel) {
   return JSON.parse(fs.readFileSync(path.join(ROOT, rel), 'utf8'));
 }
@@ -217,11 +224,13 @@ if (!pwsh) {
   }
 }
 
-if (!has('python3')) {
-  skip('app/overlay-linux.py parses', 'python3 not available');
+// 'py' is the Windows launcher, and is the name that actually resolves there.
+const python = ['python3', 'python', 'py'].find((c) => runs(c, ['--version']));
+if (!python) {
+  skip('app/overlay-linux.py parses', 'python not available');
 } else {
   check('app/overlay-linux.py parses', () => {
-    const out = spawnSync('python3', ['-m', 'py_compile', path.join(ROOT, 'app/overlay-linux.py')], {
+    const out = spawnSync(python, ['-m', 'py_compile', path.join(ROOT, 'app/overlay-linux.py')], {
       encoding: 'utf8',
     });
     return out.status === 0 ? null : (out.stderr || '').trim();
