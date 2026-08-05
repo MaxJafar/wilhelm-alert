@@ -374,6 +374,24 @@ check('every failure path still exits 0', () => {
   return broken.length ? broken.join('\n') : null;
 });
 
+// This one reads the source rather than running it, because the failure it
+// guards is invisible at runtime: the Windows player is spawned detached, so a
+// path like C:\Users\O'Brien\scream.wav closed the quoted string, PowerShell
+// died on a parser error, and the hook still reported a clean exit 0.
+check('interpolated paths are escaped into PowerShell commands', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'bin/wilhelm-alert.js'), 'utf8');
+  const offenders = src
+    .split('\n')
+    .map((line, i) => ({ at: i + 1, line }))
+    // Only lines building a PowerShell command; warning text may quote freely.
+    .filter(({ line }) => /New-Object|Add-Type|\[uri\]/.test(line))
+    .filter(({ line }) => /'\$\{/.test(line))
+    .map(({ at, line }) => `line ${at}: ${line.trim()}`);
+  return offenders.length
+    ? `interpolated straight into a quoted PowerShell string, use psQuote():\n  ${offenders.join('\n  ')}`
+    : null;
+});
+
 fs.rmSync(sandbox, { recursive: true, force: true });
 
 // ------------------------------------------------------------------ report

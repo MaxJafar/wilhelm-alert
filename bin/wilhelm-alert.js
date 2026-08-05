@@ -315,6 +315,12 @@ function detach(command, commandArgs) {
   }
 }
 
+// PowerShell escapes a single quote by doubling it. Without this a sound path
+// holding an apostrophe — C:\Users\O'Brien\... is all it takes — closes the
+// string early and the command dies on a parser error. The player is detached,
+// so that error goes nowhere: no scream, no warning, nothing to go on.
+const psQuote = (value) => `'${String(value).replace(/'/g, "''")}'`;
+
 function playSound(file) {
   if (PLATFORM === 'darwin') return detach('afplay', [file]);
 
@@ -322,10 +328,10 @@ function playSound(file) {
     // SoundPlayer handles WAV only; MediaPlayer covers mp3/m4a. Pick by
     // extension so both work without shipping a codec.
     const script = /\.wav$/i.test(file)
-      ? `(New-Object Media.SoundPlayer '${file}').PlaySync()`
+      ? `(New-Object Media.SoundPlayer ${psQuote(file)}).PlaySync()`
       : `Add-Type -AssemblyName presentationCore;` +
         `$p=New-Object System.Windows.Media.MediaPlayer;` +
-        `$p.Open([uri]'${file}');$p.Play();Start-Sleep -Seconds 5`;
+        `$p.Open([uri]${psQuote(file)});$p.Play();Start-Sleep -Seconds 5`;
     return detach('powershell', ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', script]);
   }
 
