@@ -280,6 +280,8 @@ $xaml = @'
 $reader = New-Object System.Xml.XmlNodeReader ([xml]$xaml)
 $window = [Windows.Markup.XamlReader]::Load($reader)
 
+$script:AccentHex = '#E84F2E'
+
 $rosterPanel  = $window.FindName('Roster')
 $modeList     = $window.FindName('ModeList')
 $installList  = $window.FindName('InstallList')
@@ -299,9 +301,12 @@ function New-Brush { param([string]$Hex)
 # ------------------------------------------------------------------ roster
 
 $rosterBadges = @{}
+$rosterHasFace = @{}
 
 foreach ($agent in $Agents) {
     $facePath = Join-Path $Root ("assets\scream-" + $agent.Source + ".png")
+    $hasFace = Test-Path -LiteralPath $facePath
+    $rosterHasFace[$agent.Source] = $hasFace
 
     $card = New-Object Windows.Controls.Border
     $card.Background = New-Brush '#1D1D21'
@@ -314,10 +319,10 @@ foreach ($agent in $Agents) {
     $stack = New-Object Windows.Controls.StackPanel
 
     $imageBorder = New-Object Windows.Controls.Border
-    $imageBorder.Background = New-Brush '#000000'
+    $imageBorder.Background = New-Brush $(if ($hasFace) { '#000000' } else { '#232327' })
     $imageBorder.CornerRadius = 8
     $imageBorder.Height = 58
-    if (Test-Path -LiteralPath $facePath) {
+    if ($hasFace) {
         $image = New-Object Windows.Controls.Image
         $bitmap = New-Object Windows.Media.Imaging.BitmapImage
         $bitmap.BeginInit()
@@ -328,6 +333,17 @@ foreach ($agent in $Agents) {
         $image.Stretch = 'Uniform'
         $image.Margin = '3'
         $imageBorder.Child = $image
+    } else {
+        # An empty black square reads as a broken image; a dim placeholder
+        # glyph plus the red MISSING badge below says "no face yet" instead.
+        $placeholder = New-Object Windows.Controls.TextBlock
+        $placeholder.Text = '?'
+        $placeholder.FontSize = 22
+        $placeholder.FontWeight = 'Bold'
+        $placeholder.Foreground = New-Brush '#4A4A52'
+        $placeholder.HorizontalAlignment = 'Center'
+        $placeholder.VerticalAlignment = 'Center'
+        $imageBorder.Child = $placeholder
     }
     $stack.Children.Add($imageBorder) | Out-Null
 
@@ -362,19 +378,59 @@ $modes = @(
 )
 
 $modeRadios = @{}
+$modeUi = @{}
 $currentMode = Get-ConfiguredMode
 
+# Repaints every mode card from whichever radio is checked, mirroring the
+# accent card + filled indicator the macOS panel draws for the selection.
+function Update-ModeSelection {
+    foreach ($id in $modeRadios.Keys) {
+        $selected = [bool]$modeRadios[$id].IsChecked
+        $ui = $modeUi[$id]
+        $ui.Wrapper.Background = New-Brush $(if ($selected) { '#2A1710' } else { '#1D1D21' })
+        $ui.Wrapper.BorderBrush = New-Brush $(if ($selected) { $script:AccentHex } else { '#2E2E34' })
+        $ui.Wrapper.BorderThickness = $(if ($selected) { 1.5 } else { 1 })
+        $ui.Title.Foreground = New-Brush $(if ($selected) { $script:AccentHex } else { '#F2F2F5' })
+        $ui.BadgeText.Foreground = New-Brush $(if ($selected) { $script:AccentHex } else { '#8B8B93' })
+        $ui.Indicator.Fill = New-Brush $(if ($selected) { $script:AccentHex } else { '#1D1D21' })
+        $ui.Indicator.Stroke = New-Brush $(if ($selected) { $script:AccentHex } else { '#4A4A52' })
+        $ui.Dot.Visibility = $(if ($selected) { 'Visible' } else { 'Collapsed' })
+    }
+}
+
 foreach ($mode in $modes) {
+    # The card itself toggles the radio, so the radio chrome stays hidden and
+    # the whole rounded row is the hit target. The radio still owns the
+    # grouping and the checked state.
     $radio = New-Object Windows.Controls.RadioButton
     $radio.GroupName = 'mode'
     $radio.Tag = $mode.Id
-    $radio.Foreground = New-Brush '#F2F2F5'
-    $radio.Margin = '0,0,0,7'
-    $radio.Padding = '8,0,0,0'
+    $radio.Visibility = 'Collapsed'
     $radio.IsChecked = ($mode.Id -eq $currentMode)
 
     $row = New-Object Windows.Controls.Grid
+
+    # Selection indicator: a ring that fills with the accent when active.
+    $indicator = New-Object Windows.Shapes.Ellipse
+    $indicator.Width = 15
+    $indicator.Height = 15
+    $indicator.StrokeThickness = 1.2
+    $indicator.HorizontalAlignment = 'Left'
+    $indicator.VerticalAlignment = 'Top'
+    $indicator.Margin = '2,1,0,0'
+    $dot = New-Object Windows.Shapes.Ellipse
+    $dot.Width = 5
+    $dot.Height = 5
+    $dot.Fill = New-Brush '#FFFFFF'
+    $dot.HorizontalAlignment = 'Left'
+    $dot.VerticalAlignment = 'Top'
+    $dot.Margin = '7,6,0,0'
+    $dot.IsHitTestVisible = $false
+    $row.Children.Add($indicator) | Out-Null
+    $row.Children.Add($dot) | Out-Null
+
     $left = New-Object Windows.Controls.StackPanel
+    $left.Margin = '26,0,0,0'
 
     $title = New-Object Windows.Controls.TextBlock
     $title.Text = $mode.Title
@@ -399,26 +455,38 @@ foreach ($mode in $modes) {
     $badgeText.VerticalAlignment = 'Top'
     $row.Children.Add($badgeText) | Out-Null
 
-    $radio.Content = $row
-
     $wrapper = New-Object Windows.Controls.Border
     $wrapper.Background = New-Brush '#1D1D21'
     $wrapper.BorderBrush = New-Brush '#2E2E34'
     $wrapper.BorderThickness = 1
     $wrapper.CornerRadius = 12
     $wrapper.Padding = '12,10,14,10'
-    $wrapper.Margin = '0,0,0,7'
-    $wrapper.Child = $radio
+    $wrapper.Margin = '0,0,0,8'
+    $wrapper.Cursor = 'Hand'
+    $wrapper.Child = $row
+
+    $wrapper.Add_MouseLeftButtonUp({
+        param($sender, $eventArgs)
+        $radio = $sender.Tag
+        $radio.IsChecked = $true
+        $eventArgs.Handled = $true
+    })
+
+    $wrapper.Tag = $radio
 
     $radio.Add_Checked({
         $selected = $this.Tag
         Set-ConfiguredMode -Mode $selected
         Set-Status "Mode set to $selected. Saved to $(Get-ConfigPath)"
+        Update-ModeSelection
     }.GetNewClosure())
 
     $modeRadios[$mode.Id] = $radio
+    $modeUi[$mode.Id] = @{ Wrapper = $wrapper; Indicator = $indicator; Dot = $dot; Title = $title; BadgeText = $badgeText }
     $modeList.Children.Add($wrapper) | Out-Null
 }
+
+Update-ModeSelection
 
 # ----------------------------------------------------------------- install
 
@@ -446,11 +514,13 @@ function New-InstallRow {
     $name.Foreground = New-Brush '#F2F2F5'
     $copy.Children.Add($name) | Out-Null
 
-    $detail = New-Object Windows.Controls.TextBlock
-    $detail.Text = $Detail
-    $detail.FontSize = 11
-    $detail.Foreground = New-Brush '#8B8B93'
-    $copy.Children.Add($detail) | Out-Null
+    # NB: the local is not $detail — that would collide with the $Detail
+    # param, since PowerShell variable names are case-insensitive.
+    $detailText = New-Object Windows.Controls.TextBlock
+    $detailText.Text = $Detail
+    $detailText.FontSize = 11
+    $detailText.Foreground = New-Brush '#8B8B93'
+    $copy.Children.Add($detailText) | Out-Null
     $grid.Children.Add($copy) | Out-Null
 
     $facePath = Join-Path $Root ("assets\scream-$Source.png")
@@ -503,7 +573,10 @@ function New-InstallRow {
 
 $claudeButton = New-InstallRow -Source 'claude' -Title 'Claude Code' -Detail 'Install or refresh the Claude plugin.'
 $codexButton  = New-InstallRow -Source 'codex'  -Title 'Codex'       -Detail 'Install or refresh the Codex plugin.'
-$cursorButton = New-InstallRow -Source 'cursor' -Title 'Cursor'      -Detail 'Add the stop hook to ~/.cursor/hooks.json.'
+# '~/.cursor' would render as a literal tilde here — Windows config lives at
+# %USERPROFILE%, so name the directory the user would actually open.
+$cursorHooksHint = Join-Path $env:USERPROFILE '.cursor\hooks.json'
+$cursorButton = New-InstallRow -Source 'cursor' -Title 'Cursor'      -Detail "Add the stop hook to $cursorHooksHint."
 
 # ------------------------------------------------------------- refreshing
 
@@ -515,8 +588,15 @@ function Update-Statuses {
 
         $badge = $rosterBadges[$agent.Source]
         if ($badge) {
-            $badge.Text = Get-StatusText $state
-            $badge.Foreground = New-Brush (Get-StatusBrush $state)
+            if ($rosterHasFace[$agent.Source]) {
+                $badge.Text = Get-StatusText $state
+                $badge.Foreground = New-Brush (Get-StatusBrush $state)
+            } else {
+                # No face asset: the connection state is less useful than
+                # saying the popup has nothing to show for this agent.
+                $badge.Text = 'MISSING'
+                $badge.Foreground = New-Brush '#F87171'
+            }
         }
 
         $row = $installRows[$agent.Source]
@@ -597,7 +677,7 @@ $cursorButton.Add_Click({
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $hooksPath) | Out-Null
         ($root | ConvertTo-Json -Depth 12) | Set-Content -LiteralPath $hooksPath -Encoding UTF8
         Update-Statuses
-        Set-Status 'Added the stop hook to ~/.cursor/hooks.json - restart Cursor.'
+        Set-Status "Added the stop hook to $hooksPath - restart Cursor."
     } catch {
         Set-Status "Couldn't write hooks.json: $_"
     }
@@ -611,31 +691,31 @@ function Get-LocalVersion {
     } catch { 'unknown' }
 }
 
-function Get-RemoteVersion {
-    try {
-        $response = Invoke-WebRequest -Uri $RawManifest -UseBasicParsing -TimeoutSec 10
-        ($response.Content | ConvertFrom-Json).version
-    } catch { $null }
-}
-
 $script:PendingVersion = $null
+$script:UpdatePoll = $null
 
-function Check-ForUpdate {
+function Apply-UpdateCheck {
+    param([string]$Remote)
+
     $local = Get-LocalVersion
     $versionText.Text = "Version $local"
-    $remote = Get-RemoteVersion
 
-    if (-not $remote) {
+    $parsed = $null
+    if ($Remote) {
+        try { $parsed = [version]$Remote } catch { $parsed = $null }
+    }
+
+    if (-not $parsed) {
         $script:PendingVersion = $null
+        $updateButton.Content = 'Check'
         $updateDetail.Text = "Couldn't reach GitHub. Check again later."
         $updateDetail.Foreground = New-Brush '#8B8B93'
-        $updateButton.Content = 'Check'
         return
     }
 
-    if ([version]$remote -gt [version]$local) {
-        $script:PendingVersion = $remote
-        $updateDetail.Text = "Version $remote is available."
+    if ($parsed -gt [version]$local) {
+        $script:PendingVersion = $Remote
+        $updateDetail.Text = "Version $Remote is available."
         $updateDetail.Foreground = New-Brush '#4ADE80'
         $updateButton.Content = 'Update'
     } else {
@@ -646,6 +726,25 @@ function Check-ForUpdate {
     }
 }
 
+function Check-ForUpdate {
+    # The web call runs in a background runspace: this reaches out to GitHub,
+    # and a slow or dead network must never freeze the window. The result is
+    # applied by the dispatcher timer when the fetch lands.
+    $versionText.Text = "Version $(Get-LocalVersion)"
+    # One fetch at a time: the startup check is usually still in flight when an
+    # impatient click arrives, and overwriting the handle would strand it.
+    if ($script:UpdatePoll) { return }
+    $rs = [powershell]::Create()
+    $rs.AddScript({
+        param($Url)
+        try {
+            $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 10
+            ($response.Content | ConvertFrom-Json).version
+        } catch { '' }
+    }).AddParameter('Url', $RawManifest) | Out-Null
+    $script:UpdatePoll = @{ Runspace = $rs; Handle = $rs.BeginInvoke() }
+}
+
 $updateButton.Add_Click({
     if (-not $script:PendingVersion) {
         $updateDetail.Text = 'Checking...'
@@ -654,6 +753,7 @@ $updateButton.Add_Click({
     }
 
     $updateButton.IsEnabled = $false
+    $updateButton.Content = 'Updating'
     $updateDetail.Text = 'Updating...'
     Set-Status 'Pulling the latest and refreshing every agent...'
 
@@ -663,19 +763,53 @@ $updateButton.Add_Click({
 
     $updateButton.IsEnabled = $true
     if ($out -match 'Uncommitted changes') {
+        # Nothing was replaced, so the offered update is still pending: keep it
+        # on the button rather than making them check for it all over again.
+        $updateButton.Content = 'Update'
+        $updateDetail.Text = "Version $script:PendingVersion is available."
         Set-Status 'Update stopped: you have uncommitted changes in the repo.'
     } else {
+        $script:PendingVersion = $null
+        $updateButton.Content = 'Check'
         Set-Status (($out -split "`n" | Where-Object { $_.Trim() } | Select-Object -Last 1))
+        # The panel is still running the scripts this update just replaced, so
+        # re-checking here would only overwrite this with "you're on the
+        # latest" — true, and far less useful than saying to reopen.
+        $versionText.Text = "Version $(Get-LocalVersion)"
         $updateDetail.Text = 'Updated - close and reopen to load it.'
         $updateDetail.Foreground = New-Brush '#4ADE80'
     }
-    Check-ForUpdate
     Update-Statuses
 })
 
 # ------------------------------------------------------------------ start
 
 $window.Add_Activated({ Update-Statuses })
+
+# Polls the background update check and applies whatever it fetched. Ticking
+# on the dispatcher keeps the UI marquee-responsive while the request runs.
+$updateTimer = New-Object Windows.Threading.DispatcherTimer
+$updateTimer.Interval = [TimeSpan]::FromMilliseconds(250)
+$updateTimer.Add_Tick({
+    $poll = $script:UpdatePoll
+    if ($poll -and $poll.Handle.IsCompleted) {
+        $remote = ($poll.Runspace.EndInvoke($poll.Handle) | Select-Object -First 1)
+        $poll.Runspace.Dispose()
+        $script:UpdatePoll = $null
+        Apply-UpdateCheck -Remote $remote
+    }
+})
+$updateTimer.Start()
+
+$window.Add_Closed({
+    $updateTimer.Stop()
+    # Disposing a runspace mid-request throws, and the fetch is still running
+    # whenever the window is closed inside the request timeout.
+    if ($script:UpdatePoll) {
+        try { $script:UpdatePoll.Runspace.Stop() } catch { }
+        try { $script:UpdatePoll.Runspace.Dispose() } catch { }
+    }
+})
 
 Update-Statuses
 Check-ForUpdate
