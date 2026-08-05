@@ -6,6 +6,12 @@ agents are included here, and the script picks them up automatically:
 `wilhelm-scream-banner.png` is the README artwork and is not used as a popup
 face.
 
+`app-icon.ico` is the Windows application icon — the tray icon and the Start
+Menu shortcut both point at it, and both quietly fall back to a generic icon if
+it goes missing. It holds 16 through 256px and is derived from
+`scream-openclaw.png`, cropped square to the artwork's alpha bounds; redraw it
+from any square face the same way if you want a different one.
+
 | File | Pops up when |
 | --- | --- |
 | `scream-openclaw.png` | OpenClaw finishes |

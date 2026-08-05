@@ -7,7 +7,7 @@
 
 'use strict';
 
-const { spawnSync } = require('node:child_process');
+const { spawn, spawnSync } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
 
@@ -20,6 +20,9 @@ const POSIX = {
   panel: ['bin/wilhelm-settings', []],
   update: ['bin/wilhelm-update', []],
   face: ['bin/wilhelm-face', []],
+  // Windows-only, but listed so the usage line names it and the non-Windows
+  // stub can explain itself instead of the dispatcher saying "unknown".
+  tray: ['bin/wilhelm-tray', []],
   // `build` is both targets; wilhelm-build itself only ever does one.
   build: null,
 };
@@ -29,6 +32,7 @@ const WINDOWS = {
   panel: 'app/Settings.ps1',
   update: 'bin/wilhelm-update.ps1',
   face: 'bin/wilhelm-face.ps1',
+  tray: 'app/Tray.ps1',
   // Nothing to compile: the Windows overlay and panel are both scripts.
   build: null,
 };
@@ -53,6 +57,20 @@ if (process.platform === 'win32') {
     process.stderr.write(`wilhelm: ${target} is not available on Windows yet.\n`);
     process.exit(1);
   }
+  // The tray host runs until it's quit, so it gets detached rather than run:
+  // otherwise it holds the shell that started it for the rest of the session.
+  if (target === 'tray') {
+    const child = spawn(
+      'powershell',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
+       '-File', script, '-Root', ROOT, ...rest],
+      { detached: true, stdio: 'ignore', windowsHide: true }
+    );
+    child.unref();
+    process.stdout.write('Wilhelm Alert is in the notification area (check the hidden icons).\n');
+    process.exit(0);
+  }
+
   // -Root keeps the scripts working no matter where they're invoked from.
   run('powershell', [
     '-NoProfile',
@@ -89,6 +107,7 @@ if (target === 'build') {
 const linuxHint = {
   app: 'There is no Linux panel yet.',
   panel: 'There is no Linux panel yet.',
+  tray: 'The tray icon is Windows only.',
   face: 'Save images to assets/scream-<agent>.png by hand.',
 };
 

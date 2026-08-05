@@ -42,7 +42,7 @@ while sharing the same popup behavior.
 | | Sound | Overlay | Shake | Mini app |
 | --- | --- | --- | --- | --- |
 | macOS | ✅ | ✅ | ✅ | ✅ AppKit |
-| Windows | ✅ | ✅ | ✅ | ✅ WPF |
+| Windows | ✅ | ✅ | ✅ | ✅ WPF, plus a tray icon |
 | Linux | ✅ | ⚠️ needs python3-tk | ⚠️ same | ❌ edit the config file |
 
 The core is Node, so all three behave the same, and every `pnpm` command
@@ -106,6 +106,30 @@ pnpm app
 Either way you never need to come back to this folder. Pick your mode, hit
 **Test it** to hear it, and install into your agents with a button. No
 browser, no localhost, no menu bar clutter.
+
+### The tray icon (Windows)
+
+```bash
+pnpm tray
+```
+
+Puts a screaming face in the notification area. Double-click opens the panel;
+right-click gets you the mode, the volume, a **Test the alert**, and a **Start
+with Windows** toggle that writes a shortcut into your Startup folder. Both it
+and the panel write the same config file, so the ticks are worked out each time
+the menu opens rather than going stale behind your back.
+
+Windows 11 files every new tray icon under the hidden-icons arrow, so that's
+where it lands. Drag it onto the taskbar to keep it out. It says so once, in a
+balloon, the first time it starts.
+
+Only one ever runs, however many times it's launched — otherwise Startup plus a
+double-click leaves two identical icons that both have to be quit. To wire the
+toggle up from a script instead of a right click:
+
+```bash
+powershell -ExecutionPolicy Bypass -File app\Tray.ps1 -EnableStartup
+```
 
 Don't want it installed anywhere? `pnpm panel` opens the same window straight
 from the repo. To remove the shortcut later: `./bin/wilhelm-app --uninstall`

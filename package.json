@@ -26,6 +26,7 @@
   "scripts": {
     "app": "node bin/wilhelm.js app",
     "panel": "node bin/wilhelm.js panel",
+    "tray": "node bin/wilhelm.js tray",
     "update-alert": "node bin/wilhelm.js update",
     "face": "node bin/wilhelm.js face",
     "test-alert": "node bin/wilhelm-alert.js --force",

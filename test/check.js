@@ -172,13 +172,26 @@ check('shell entry points are executable', () => {
   if (process.platform === 'win32') return null; // no POSIX mode bits
   const scripts = ['bin/wilhelm-alert', 'bin/wilhelm-build', 'bin/wilhelm-app',
                    'bin/wilhelm-settings', 'bin/wilhelm-face', 'bin/wilhelm-update',
-                   'bin/wilhelm-log'];
+                   'bin/wilhelm-log', 'bin/wilhelm-tray'];
   const notExecutable = scripts.filter((rel) => {
     const full = path.join(ROOT, rel);
     if (!fs.existsSync(full)) return true;
     return !(fs.statSync(full).mode & 0o111);
   });
   return notExecutable.length ? `not executable: ${notExecutable.join(', ')}` : null;
+});
+
+// The tray icon and the Start Menu shortcut both point at this file, and both
+// silently fall back to a generic icon when it is missing, so nothing at
+// runtime would tell you it had gone.
+check('the app icon exists and is a real .ico', () => {
+  const icon = path.join(ROOT, 'assets/app-icon.ico');
+  if (!fs.existsSync(icon)) return 'assets/app-icon.ico is missing';
+  const head = fs.readFileSync(icon).subarray(0, 6);
+  // ICONDIR: reserved 0, type 1, then the image count.
+  if (head.readUInt16LE(0) !== 0 || head.readUInt16LE(2) !== 1) return 'not an ICO container';
+  const count = head.readUInt16LE(4);
+  return count > 0 ? null : 'the ICO declares no images';
 });
 
 check('every agent in the roster has a face', () => {
@@ -205,7 +218,7 @@ for (const file of JS_FILES) {
 }
 
 const PS_FILES = [
-  'app/Settings.ps1', 'app/overlay-windows.ps1',
+  'app/Settings.ps1', 'app/overlay-windows.ps1', 'app/Tray.ps1', 'app/Config.ps1',
   'bin/wilhelm-update.ps1', 'bin/wilhelm-app.ps1', 'bin/wilhelm-face.ps1',
 ];
 const pwsh = ['pwsh', 'powershell'].find(has);

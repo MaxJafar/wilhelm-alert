@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# The tray icon is the Windows notification area, which only Windows has.
+# This exists so `pnpm tray` fails with an explanation everywhere else rather
+# than with "no such file".
+set -uo pipefail
+
+echo "wilhelm-tray: the tray icon is Windows only." >&2
+echo "  macOS: the panel lives in ~/Applications after 'pnpm app'." >&2
+echo "  Linux: there is no panel yet; edit ~/.config/wilhelm-alert/config." >&2
+exit 1
