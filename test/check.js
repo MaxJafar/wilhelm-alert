@@ -249,8 +249,13 @@ if (!pwsh) {
 // wilhelm-build on a Mac, so a mistake in it reached users as a panel that
 // would not open. -typecheck is the full front end without codegen, which is
 // what catches a wrong API rather than merely unbalanced braces.
+// Darwin as well as swiftc: the Linux runners do ship a working swiftc, and it
+// gets all the way to `no such module 'Cocoa'` before failing. These sources
+// are AppKit, and wilhelm-build only ever compiles them on a Mac.
 const SWIFT_FILES = ['app/Settings.swift', 'app/Overlay.swift'];
-if (!runs('swiftc', ['-version'])) {
+if (process.platform !== 'darwin') {
+  skip(`${SWIFT_FILES.length} Swift sources typecheck`, 'AppKit needs macOS');
+} else if (!runs('swiftc', ['-version'])) {
   skip(`${SWIFT_FILES.length} Swift sources typecheck`, 'swiftc not available');
 } else {
   for (const file of SWIFT_FILES) {
