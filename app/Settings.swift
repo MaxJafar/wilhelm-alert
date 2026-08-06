@@ -290,6 +290,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var updateDetail: NSTextField!
     private var updateButton: NSButton!
     private var pendingVersion: String?
+    private var volumeSlider: NSSlider!
+    private var volumeReadout: NSTextField!
 
     private let modes = [
         ("light", "Light", "Just the scream.", "QUIET"),
@@ -315,7 +317,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let width: CGFloat = 620
-        let height: CGFloat = 860
+        let height: CGFloat = 946
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: width, height: height),
             styleMask: [.titled, .closable, .miniaturizable, .fullSizeContentView],
@@ -327,7 +329,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.titlebarAppearsTransparent = true
         window.isMovableByWindowBackground = true
         window.backgroundColor = .clear
-        window.minSize = NSSize(width: 560, height: 740)
+        window.minSize = NSSize(width: 560, height: 826)
         window.delegate = self
         window.center()
 
@@ -364,6 +366,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         addFullWidth(makeHeader(), to: stack)
         addFullWidth(makeFacesSection(), to: stack)
         addFullWidth(makeModesSection(), to: stack)
+        addFullWidth(makeVolumeSection(), to: stack)
         addFullWidth(makeTestRow(), to: stack)
         addFullWidth(makeSeparator(), to: stack)
         addFullWidth(makeInstallSection(), to: stack)
@@ -558,6 +561,45 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
             previousCard = card
         }
         section.addArrangedSubview(cards)
+        return section
+    }
+
+    private func makeVolumeSection() -> NSView {
+        let section = NSStackView()
+        section.orientation = .vertical
+        section.alignment = .leading
+        section.spacing = 7
+        section.addArrangedSubview(makeSectionHeader(
+            title: "Scream volume",
+            subtitle: "How loud it lands. At 0 the popup still arrives, it just shuts up."
+        ))
+
+        let row = NSStackView()
+        row.orientation = .horizontal
+        row.alignment = .centerY
+        row.spacing = 12
+
+        let current = readConfiguredVolume()
+        let slider = NSSlider(value: Double(current), minValue: 0, maxValue: 100,
+                              target: self, action: #selector(volumeChanged(_:)))
+        slider.isContinuous = true
+        slider.trackFillColor = wilhelmAccent
+        slider.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        volumeSlider = slider
+
+        let readout = label(current == 0 ? "Muted" : "\(current)%", size: 13, bold: true)
+        readout.alignment = .right
+        readout.setContentHuggingPriority(.required, for: .horizontal)
+        readout.widthAnchor.constraint(greaterThanOrEqualToConstant: 54).isActive = true
+        volumeReadout = readout
+
+        row.addArrangedSubview(slider)
+        row.addArrangedSubview(readout)
+        // Matching how makeModesSection pins its card area: a leading-aligned
+        // stack won't stretch its children, so the slider would collapse to
+        // its intrinsic width without this.
+        row.widthAnchor.constraint(equalToConstant: 560).isActive = true
+        section.addArrangedSubview(row)
         return section
     }
 
@@ -907,9 +949,28 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         say("Mode set to \(selectedMode). Ready when your agent is.")
     }
 
+    @objc private func volumeChanged(_ sender: NSSlider) {
+        let value = Int(sender.doubleValue.rounded())
+        volumeReadout?.stringValue = value == 0 ? "Muted" : "\(value)%"
+        // A continuous slider fires for every pixel of a drag, and each write
+        // rewrites the whole config file. Repaint the number the whole way
+        // across but only commit once the mouse comes up; keyboard steps are
+        // not drags and so commit immediately.
+        if NSApp.currentEvent?.type == .leftMouseDragged { return }
+        writeConfigValue(key: "volume", value: String(value))
+        say(value == 0 ? "Muted. The popup still shows." : "Volume set to \(value)%.")
+    }
+
     @objc private func testAlert() {
-        run(repoRoot + "/bin/wilhelm-alert", args: [], env: ["WILHELM_ALERT_MODE": selectedMode])
-        say("Testing \(selectedMode)… Look alive.")
+        // --force so pressing this twice in a row actually plays twice, and an
+        // explicit volume so a drag still sitting uncommitted is still heard.
+        let volume = Int(volumeSlider.doubleValue.rounded())
+        run(repoRoot + "/bin/wilhelm-alert",
+            args: ["--force", "--mode", selectedMode, "--volume", String(volume)],
+            env: [:])
+        say(volume == 0
+            ? "Testing \(selectedMode) at 0% — muted on purpose."
+            : "Testing \(selectedMode) at \(volume)%… Look alive.")
     }
 
     @objc private func installAgent(_ sender: NSButton) {
@@ -1055,18 +1116,48 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         return field
     }
 
-    private func readConfiguredMode() -> String {
-        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else { return "light" }
-        for line in text.split(separator: "\n") where line.hasPrefix("mode=") {
-            return String(line.dropFirst(5)).trimmingCharacters(in: .whitespaces)
+    private func configLines() -> [String] {
+        guard let text = try? String(contentsOf: configURL, encoding: .utf8) else { return [] }
+        return text.split(separator: "\n").map(String.init)
+    }
+
+    private func readConfigValue(_ key: String) -> String? {
+        for line in configLines() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            guard trimmed.hasPrefix("\(key)=") else { continue }
+            return String(trimmed.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces)
         }
-        return "light"
+        return nil
+    }
+
+    // Rewriting the file from scratch used to throw away every other key. The
+    // README tells anyone running this as a plugin to keep an absolute sound=
+    // path in here, and picking a mode silently deleted it.
+    private func writeConfigValue(key: String, value: String) {
+        let directory = configURL.deletingLastPathComponent()
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var kept = configLines().filter { line in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            return !trimmed.isEmpty && !trimmed.hasPrefix("\(key)=")
+        }
+        kept.append("\(key)=\(value)")
+        try? (kept.joined(separator: "\n") + "\n")
+            .write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    private func readConfiguredMode() -> String {
+        readConfigValue("mode") ?? "light"
     }
 
     private func writeConfiguredMode(_ mode: String) {
-        let directory = configURL.deletingLastPathComponent()
-        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try? "mode=\(mode)\n".write(to: configURL, atomically: true, encoding: .utf8)
+        writeConfigValue(key: "mode", value: mode)
+    }
+
+    // Out of range or unparseable reads as full, matching wilhelm-alert.js.
+    private func readConfiguredVolume() -> Int {
+        guard let raw = readConfigValue("volume"),
+              let value = Int(raw), (0...100).contains(value) else { return 100 }
+        return value
     }
 
     private func which(_ tool: String) -> String? {

@@ -194,6 +194,14 @@ check('the app icon exists and is a real .ico', () => {
   return count > 0 ? null : 'the ICO declares no images';
 });
 
+// Without this, an unrecognised agent falls through to whichever scream-*.png
+// sorts first, which is a real agent's face being shown for something else.
+check('the fallback face exists', () => {
+  return fs.existsSync(path.join(ROOT, 'assets/scream-generic.png'))
+    ? null
+    : 'assets/scream-generic.png is missing; unknown agents borrow another agent\'s face';
+});
+
 check('every agent in the roster has a face', () => {
   const sources = ['claude', 'codex', 'cursor', 'antigravity', 'openclaw'];
   const missing = sources.filter(
@@ -233,6 +241,22 @@ if (!pwsh) {
         `if($e.Count){$e|ForEach-Object{Write-Output ("line "+$_.Extent.StartLineNumber+": "+$_.Message)};exit 1}`;
       const out = spawnSync(pwsh, ['-NoProfile', '-Command', script], { encoding: 'utf8' });
       return out.status === 0 ? null : (out.stdout || out.stderr || '').trim();
+    });
+  }
+}
+
+// Nothing verified the Swift before this: it is built at runtime by
+// wilhelm-build on a Mac, so a mistake in it reached users as a panel that
+// would not open. -typecheck is the full front end without codegen, which is
+// what catches a wrong API rather than merely unbalanced braces.
+const SWIFT_FILES = ['app/Settings.swift', 'app/Overlay.swift'];
+if (!runs('swiftc', ['-version'])) {
+  skip(`${SWIFT_FILES.length} Swift sources typecheck`, 'swiftc not available');
+} else {
+  for (const file of SWIFT_FILES) {
+    check(`${file} typechecks`, () => {
+      const out = spawnSync('swiftc', ['-typecheck', path.join(ROOT, file)], { encoding: 'utf8' });
+      return out.status === 0 ? null : (out.stderr || '').trim();
     });
   }
 }
