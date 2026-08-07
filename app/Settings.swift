@@ -22,6 +22,29 @@ let repoRoot: String = {
 
 private let wilhelmAccent = NSColor(calibratedRed: 0.91, green: 0.31, blue: 0.18, alpha: 1)
 
+// A Spotlight-launched .app inherits launchd's PATH (/usr/bin:/bin:...), which
+// is missing wherever Homebrew, nvm, or the installer pkg actually put node —
+// and the test-alert shim, wilhelm-update, and an npm-installed claude all
+// need it. A login shell knows the user's real PATH, so ask one and hand its
+// answer to every child this panel spawns. Static so it resolves lazily, once.
+enum LoginShell {
+    static let path: String = {
+        let fallback = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = ["-lc", "printf %s \"$PATH\""]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        do { try process.run() } catch { return fallback }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        let output = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return output.isEmpty ? fallback : output
+    }()
+}
+
 // MARK: - reusable views
 
 final class RoundedCardView: NSView {
@@ -1174,6 +1197,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = args
         if let cwd { process.currentDirectoryURL = URL(fileURLWithPath: cwd) }
+        var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = LoginShell.path
+        process.environment = environment
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
@@ -1188,6 +1214,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSWindowDelegate {
         process.executableURL = URL(fileURLWithPath: path)
         process.arguments = args
         var environment = ProcessInfo.processInfo.environment
+        environment["PATH"] = LoginShell.path
         env.forEach { environment[$0.key] = $0.value }
         process.environment = environment
         try? process.run()

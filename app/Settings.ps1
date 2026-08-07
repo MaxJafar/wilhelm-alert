@@ -111,9 +111,21 @@ function Get-StatusBrush {
 function Invoke-Capture {
     param([string]$FilePath, [string[]]$Arguments)
     try {
+        # npm installs claude and codex as .cmd shims, which Process.Start with
+        # UseShellExecute=$false cannot launch by bare name — resolve the real
+        # file first and route batch files through cmd.exe.
+        $app = Get-Command $FilePath -CommandType Application -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if ($app) { $FilePath = $app.Source }
+
         $info = New-Object System.Diagnostics.ProcessStartInfo
-        $info.FileName = $FilePath
-        $info.Arguments = ($Arguments -join ' ')
+        if ($FilePath -match '\.(cmd|bat)$') {
+            $info.FileName = Join-Path $env:SystemRoot 'System32\cmd.exe'
+            $info.Arguments = '/d /s /c "' + ((@("`"$FilePath`"") + $Arguments) -join ' ') + '"'
+        } else {
+            $info.FileName = $FilePath
+            $info.Arguments = ($Arguments -join ' ')
+        }
         $info.RedirectStandardOutput = $true
         $info.RedirectStandardError = $true
         $info.UseShellExecute = $false

@@ -21,15 +21,15 @@ $assets = Join-Path $Root 'assets'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 $out = Join-Path $assets "scream-$Name.png"
 
-# Clipboard access needs STA; PowerShell defaults to MTA when run with -File.
-$image = $null
-$thread = [System.Threading.Thread]::new([System.Threading.ThreadStart]{
-    $script:clipImage = [System.Windows.Forms.Clipboard]::GetImage()
-})
-$thread.SetApartmentState([System.Threading.ApartmentState]::STA)
-$thread.Start()
-$thread.Join()
-$image = $script:clipImage
+# Clipboard access needs an STA thread. The console host has been STA since
+# v3, so normally this just reads it — but a scriptblock handed to a bare
+# ThreadStart has no runspace and kills the whole process before a single
+# line can print, so under an MTA host relaunch once with -Sta instead.
+if ([System.Threading.Thread]::CurrentThread.GetApartmentState() -ne 'STA') {
+    & powershell -NoProfile -ExecutionPolicy Bypass -Sta -File $MyInvocation.MyCommand.Path -Root $Root $Name
+    exit $LASTEXITCODE
+}
+$image = [System.Windows.Forms.Clipboard]::GetImage()
 
 if (-not $image) {
     Write-Output 'wilhelm-face: no image on the clipboard.'

@@ -61,6 +61,11 @@ try {
     # Click anywhere to dismiss early.
     $window.Add_MouseDown({ $window.Close() })
 
+    # Closing the last window does not stop a bare dispatcher loop — without
+    # this, Dispatcher.Run() below never returns and the process outlives the
+    # popup whenever a console is attached.
+    $window.Add_Closed({ $window.Dispatcher.InvokeShutdown() })
+
     $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
 
     if ($Mode -eq "turbo") {
